@@ -28,12 +28,19 @@ const CADA_ESPECIAL = 6;   // maçãs normais entre uma especial e outra
 const VIDA_ESPECIAL = 7;   // segundos que ela espera na mesa
 
 // ---------- dados guardados ----------
-const PADRAO = { recordes: {}, conquistas: {}, tokens: 0, banco: 0, nivel: 'facil', config: { som: true, pausaAba: true } };
+const PADRAO = {
+  recordes: {}, conquistas: {}, metas: {}, tokens: 0, banco: 0,
+  total: 0,        // pontos somados na vida, que NUNCA se gastam: é a medalha
+  partidas: 0, quebrados: 0, pele: 0,
+  nivel: 'facil', config: { som: true, pausaAba: true },
+};
 let dados;
 try { dados = JSON.parse(localStorage.getItem('cobrinha') || '{}'); } catch { dados = {}; }
 dados = { ...PADRAO, ...dados };
 dados.recordes = { ...dados.recordes };
 dados.conquistas = { ...dados.conquistas };
+dados.metas = { ...dados.metas };
+if (!(dados.pele >= 0)) dados.pele = 0;
 dados.config = { ...PADRAO.config, ...dados.config };
 if (!NIVEIS[dados.nivel]) dados.nivel = 'facil';
 const salvar = () => { try { localStorage.setItem('cobrinha', JSON.stringify(dados)); } catch {} };
@@ -130,10 +137,66 @@ const friso = new THREE.MeshStandardMaterial({ color: 0x8d7f5e, roughness: .62, 
     cena.add(m);
   });
 
-// A primeira do elenco. As outras 29 entram com o vestiário.
+// ---------- o elenco: trinta cobras ----------
+// Cada uma é um registro, e a textura sai dele: é o que faz trinta caberem
+// numa tabela em vez de trinta imagens. `custo` é em pontos somados na vida;
+// `meta` troca o preço por um desafio, e são as mais bonitas que vêm daí.
 const PELES = [
-  { nome: 'Verde-mata', padrao: 'manchas', base: '#3f7d38', escuro: '#27551f', claro: '#86c266' },
+  // as dez primeiras: uma cor, pouco contraste, degrau de 50
+  { nome: 'Verde-mata',  padrao: 'manchas',  base: '#3f7d38', escuro: '#27551f', claro: '#86c266', custo: 0 },
+  { nome: 'Oliva',       padrao: 'liso',     base: '#6b7a3a', escuro: '#47512a', claro: '#a3b06a', custo: 50 },
+  { nome: 'Cinza-pedra', padrao: 'liso',     base: '#6e7273', escuro: '#4a4d4e', claro: '#a6abac', custo: 100 },
+  { nome: 'Areia',       padrao: 'liso',     base: '#b9a378', escuro: '#8a7450', claro: '#e2d2ac', custo: 150 },
+  { nome: 'Musgo',       padrao: 'manchas',  base: '#3c5a3a', escuro: '#243b23', claro: '#6e9168', custo: 200 },
+  { nome: 'Cobre',       padrao: 'liso',     base: '#9c5a35', escuro: '#6d3b20', claro: '#d08a5c', custo: 250 },
+  { nome: 'Fuligem',     padrao: 'liso',     base: '#43474a', escuro: '#26292b', claro: '#73787c', custo: 300 },
+  { nome: 'Palha',       padrao: 'listras',  base: '#c4b06b', escuro: '#8f7d45', claro: '#e8dba6', custo: 350 },
+  { nome: 'Barro',       padrao: 'manchas',  base: '#8d4f38', escuro: '#5e3122', claro: '#c0805f', custo: 400 },
+  { nome: 'Sombra',      padrao: 'liso',     base: '#4a5568', escuro: '#2d3542', claro: '#7b89a0', custo: 450 },
+  // as dez do meio: padrão marcado, degrau de 100
+  { nome: 'Píton',       padrao: 'manchas',  base: '#a98b5f', escuro: '#5c452a', claro: '#ddc69a', custo: 550 },
+  { nome: 'Jiboia',      padrao: 'losangos', base: '#8a6b47', escuro: '#4e3823', claro: '#c7a97e', custo: 650 },
+  { nome: 'Cascavel',    padrao: 'losangos', base: '#c0a473', escuro: '#6b5433', claro: '#e9d6ad', custo: 750 },
+  { nome: 'Jararaca',    padrao: 'malha',    base: '#75764a', escuro: '#43441f', claro: '#a9ab79', custo: 850 },
+  { nome: 'Coral',       padrao: 'aneis',    base: '#c62828', escuro: '#161616', claro: '#f3e9d2', custo: 950 },
+  { nome: 'Papa-ovo',    padrao: 'listras',  base: '#7d9a3c', escuro: '#4a5e21', claro: '#d6d96a', custo: 1050 },
+  { nome: 'Anaconda',    padrao: 'manchas',  base: '#44583c', escuro: '#1f2a1a', claro: '#79905f', custo: 1150 },
+  { nome: 'Caninana',    padrao: 'liso',     base: '#b4c23f', escuro: '#7a8625', claro: '#e4ee89', custo: 1250 },
+  { nome: 'Surucucu',    padrao: 'losangos', base: '#6e4a2f', escuro: '#3a2416', claro: '#a97d52', custo: 1350 },
+  { nome: 'Naja',        padrao: 'aneis',    base: '#2b2b2b', escuro: '#0d0d0d', claro: '#e6dcc2', custo: 1450 },
+  // as dez últimas: as mais bonitas, degrau de 230, seis vindas de meta
+  { nome: 'Esmeralda',   padrao: 'malha',    base: '#108a5a', escuro: '#064a30', claro: '#6ef0b4', custo: 1680 },
+  { nome: 'Safira',      padrao: 'malha',    base: '#1b56c4', escuro: '#0a2a6e', claro: '#7fb0ff', custo: 1910 },
+  { nome: 'Rubi',        padrao: 'aneis',    base: '#a4123a', escuro: '#520a1d', claro: '#ff7d9c', custo: 2140 },
+  { nome: 'Ametista',    padrao: 'losangos', base: '#6b3fb0', escuro: '#3a2064', claro: '#c49bff', meta: 'douradas5' },
+  { nome: 'Marfim',      padrao: 'liso',     base: '#e8e0cb', escuro: '#b3a98e', claro: '#fffaf0', meta: 'veterana' },
+  { nome: 'Obsidiana',   padrao: 'malha',    base: '#12161f', escuro: '#000000', claro: '#4a6fa8', meta: 'jejum20' },
+  { nome: 'Dourada',     padrao: 'liso',     base: '#c9a227', escuro: '#7d6213', claro: '#ffeaa0', custo: 3060 },
+  { nome: 'Prata-viva',  padrao: 'malha',    base: '#9aa6ad', escuro: '#5c666c', claro: '#f2f8fb', meta: 'pedra10' },
+  { nome: 'Aurora',      padrao: 'aneis',    base: '#1f7a8c', escuro: '#15314d', claro: '#a6f0d8', meta: 'maratona' },
+  { nome: 'Ouroboros',   padrao: 'losangos', base: '#141210', escuro: '#000000', claro: '#d8b24a', meta: 'tresMetas' },
 ];
+
+// As metas são desafios, não acúmulo. Cada uma libera uma cobra.
+const METAS = {
+  douradas5: { nome: 'Fome de ouro', dica: 'coma 5 maçãs de poder numa partida', ok: () => especiaisNaPartida >= 5 },
+  jejum20:   { nome: 'Jejum',        dica: 'chegue a 20 pontos sem usar poder',  ok: () => pontos >= 20 && !usouPoder },
+  pedra10:   { nome: 'Demolidora',   dica: 'quebre 10 obstáculos com o escudo',  ok: () => dados.quebrados >= 10 },
+  maratona:  { nome: 'Noite longa',  dica: 'fique 3 minutos viva numa partida',  ok: () => tempoJogo >= 180 },
+  veterana:  { nome: 'Veterana',     dica: 'jogue 50 partidas',                  ok: () => dados.partidas >= 50 },
+  tresMetas: { nome: 'Ciclo fechado', dica: 'bata a meta dos três níveis',       ok: () => ['facil', 'medio', 'dificil'].every(k => dados.conquistas[k]) },
+};
+
+const temAPele = (i) => {
+  const p = PELES[i];
+  return p.meta ? !!dados.metas[p.meta] : dados.total >= p.custo;
+};
+const comoSeGanha = (i) => {
+  const p = PELES[i];
+  if (p.meta) return METAS[p.meta].dica;
+  const falta = p.custo - dados.total;
+  return falta > 0 ? `faltam ${falta} pontos` : 'liberada';
+};
 
 // ---------- a pele: escamas desenhadas, não pintadas à mão ----------
 // Uma cobra é um registro de dados, e a textura sai dele. São seis padrões
@@ -286,6 +349,14 @@ function vestir(pele) {
   matCobra.needsUpdate = true;
   crânio.material.map = t;
   crânio.material.needsUpdate = true;
+}
+
+// A miniatura de cada cobra é a própria textura dela — não um quadradinho de
+// cor. Guardada depois da primeira vez: trinta desenhos não se refazem à toa.
+const miniaturas = new Map();
+function miniaturaDaPele(pele) {
+  if (!miniaturas.has(pele.nome)) miniaturas.set(pele.nome, texturaDaPele(pele).image.toDataURL());
+  return miniaturas.get(pele.nome);
 }
 
 // A linha do corpo, reaproveitada quadro a quadro para não gerar lixo.
@@ -488,6 +559,7 @@ let cobra, anterior, dir, fila, comida, especial, especialPoder = 'escudo', bloc
 let estado = 'pronto', acc = 0, passoAtual = .22, ultimoT = 0, tremor = 0, angulo = 0, surgir = 1, surgirEspecial = 1;
 let tempoJogo = 0, marcoPontos = 0, marcoTempo = 0, desdeEspecial = 0, especialAte = 0;
 let poder = null, poderAte = 0, invul = 0, metaBatida = false, revivido = false, creditado = 0;
+let especiaisNaPartida = 0, usouPoder = false;   // só para as metas da partida
 
 const $ = id => document.getElementById(id);
 const recorde = () => dados.recordes[nivel] || 0;
@@ -565,6 +637,7 @@ function reiniciar() {
   tempoJogo = marcoPontos = marcoTempo = desdeEspecial = 0;
   poder = null; poderAte = 0; invul = 0;
   metaBatida = false; revivido = false; creditado = 0;
+  especiaisNaPartida = 0; usouPoder = false;
   especial = null;
   comida = null;
   comida = sortear();
@@ -592,6 +665,8 @@ function tique() {
     if (iBloco >= 0) {                                      // e despedaça o bloco
       estilhacar(mundo(h.x), mundo(h.y));
       blocos.splice(iBloco, 1);
+      dados.quebrados++;
+      salvar();
     }
   }
 
@@ -605,6 +680,7 @@ function tique() {
 
   if (comeuEspecial) {
     especial = null;
+    especiaisNaPartida++;
     ativarPoder(especialPoder);
   } else {
     desdeEspecial++;
@@ -612,14 +688,40 @@ function tique() {
     if (!comida) return morrer(true);
   }
   if (!metaBatida && pontos >= NIVEIS[nivel].meta) { metaBatida = true; conquistar(); }
+  conferirMetas();
   hud();
 }
 
 function ativarPoder(chave) {
   poder = chave;
+  usouPoder = true;
   poderAte = PODERES[poder].dur;
   som(880, .25);
   avisar(`${PODERES[poder].nome}! ${PODERES[poder].dica}`);
+}
+
+// Metas e cobras: o que mudou de estado vira aviso, e nada mais. Chamada a
+// cada casa andada e em cada morte — seis comparações, não pesa.
+function conferirMetas() {
+  for (const [chave, m] of Object.entries(METAS)) {
+    if (dados.metas[chave] || !m.ok()) continue;
+    dados.metas[chave] = true;
+    salvar();
+    const cobra = PELES.find(p => p.meta === chave);
+    som(1180, .45);
+    avisar(cobra ? `${m.nome}! Nova cobra: ${cobra.nome}` : `${m.nome}!`);
+  }
+}
+
+// Quem passou a caber no bolso desde a última conferência é anunciado uma vez.
+let peleAnunciada = -1;
+function conferirPeles() {
+  let ultima = -1;
+  for (let i = 0; i < PELES.length; i++) if (!PELES[i].meta && temAPele(i)) ultima = i;
+  if (ultima > peleAnunciada) {
+    if (peleAnunciada >= 0) { som(1040, .4); avisar(`Nova cobra no vestiário: ${PELES[ultima].nome}`); }
+    peleAnunciada = ultima;
+  }
 }
 
 // O gancho das recompensas: toda conquista de meta passa por aqui.
@@ -679,9 +781,13 @@ function morrer(venceu) {
   tremor = venceu ? 0 : .6;
   som(venceu ? 880 : 110, .5, 'sawtooth');
   dados.banco += pontos - creditado;          // o banco recebe cada ponto uma vez só
+  dados.total += pontos - creditado;          // o total nunca se gasta: é a medalha
   creditado = pontos;
+  if (!revivido) dados.partidas++;
   if (pontos > recorde()) dados.recordes[nivel] = pontos;
   salvar();
+  conferirMetas();
+  conferirPeles();
   hud();
   const fim = venceu ? 'Você venceu!' : 'Fim de jogo';
   setTimeout(() => estado === 'fim' && abrirPainel('fim', fim,
@@ -730,20 +836,25 @@ function abrirPainel(modo, titulo, sub) {
   $('revBanco').hidden = !(ofertas && podeBanco());
   $('revToken').textContent = `Reviver · 1 token (tem ${dados.tokens})`;
   $('revBanco').textContent = `Reviver · ${CUSTO_BANCO} pontos (banco ${dados.banco})`;
-  $('pconfig').hidden = $('pniveis').hidden = true;
+  $('pconfig').hidden = $('pniveis').hidden = $('pvest').hidden = true;
   $('painel').hidden = false;
   $('pausa').hidden = true;
 }
 
 function fecharPaineis() {
-  $('painel').hidden = $('pconfig').hidden = $('pniveis').hidden = true;
+  $('painel').hidden = $('pconfig').hidden = $('pniveis').hidden = $('pvest').hidden = true;
   $('pausa').hidden = estado !== 'jogando';
 }
 
 // Os dois submenus do painel: dificuldade e configurações.
-const abrirSub = id => { $('painel').hidden = true; $(id).hidden = false; if (id === 'pconfig') pintarConfig(); };
-const voltarSub = () => { $('pconfig').hidden = $('pniveis').hidden = true; $('painel').hidden = false; };
-const naoSub = () => $('pconfig').hidden && $('pniveis').hidden;
+const abrirSub = id => {
+  $('painel').hidden = true;
+  $(id).hidden = false;
+  if (id === 'pconfig') pintarConfig();
+  if (id === 'pvest') pintarVestiario();
+};
+const voltarSub = () => { $('pconfig').hidden = $('pniveis').hidden = $('pvest').hidden = true; $('painel').hidden = false; };
+const naoSub = () => $('pconfig').hidden && $('pniveis').hidden && $('pvest').hidden;
 
 // A dificuldade escolhida fica escrita no proprio botao do menu.
 function escolherNivel(n) {
@@ -775,6 +886,33 @@ function pausar() {
 function sairParaMenu() {
   estado = 'pronto';
   abrirPainel('menu', 'Cobrinha 3D', 'Escolha o nível');
+}
+
+function pintarVestiario() {
+  const grade = $('vitrine');
+  grade.textContent = '';
+  PELES.forEach((pele, i) => {
+    const tem = temAPele(i), vestida = i === dados.pele;
+    const b = document.createElement('button');
+    b.className = 'cobra' + (tem ? '' : ' cobra--presa') + (vestida ? ' cobra--vestida' : '');
+    b.disabled = !tem;
+    b.innerHTML = '<span class="cobra__pele"></span><span class="cobra__nome"></span><span class="cobra__como"></span>';
+    b.querySelector('.cobra__pele').style.backgroundImage = `url(${miniaturaDaPele(pele)})`;
+    b.querySelector('.cobra__nome').textContent = pele.nome;
+    b.querySelector('.cobra__como').textContent = vestida ? 'vestida' : tem ? 'vestir' : comoSeGanha(i);
+    if (tem) b.addEventListener('click', () => { escolherPele(i); pintarVestiario(); });
+    grade.appendChild(b);
+  });
+  const quantas = PELES.filter((_, i) => temAPele(i)).length;
+  $('subVest').textContent = `${quantas} de ${PELES.length} · ${dados.total} pontos somados na vida`;
+}
+
+function escolherPele(i) {
+  if (!temAPele(i)) return;
+  dados.pele = i;
+  salvar();
+  vestir(PELES[i]);
+  som(640, .18);
 }
 
 function pintarConfig() {
@@ -828,6 +966,8 @@ $('continuar').addEventListener('click', pausar);
 $('sair').addEventListener('click', sairParaMenu);
 $('revToken').addEventListener('click', () => reviver('token'));
 $('revBanco').addEventListener('click', () => reviver('banco'));
+$('abrirVest').addEventListener('click', () => abrirSub('pvest'));
+$('fecharVest').addEventListener('click', voltarSub);
 $('abrirConfig').addEventListener('click', () => abrirSub('pconfig'));
 $('menuConfig').addEventListener('click', () => abrirSub('pconfig'));
 $('fecharConfig').addEventListener('click', voltarSub);
@@ -870,7 +1010,8 @@ addEventListener('resize', ajustar);
 
 const relogio = new THREE.Clock();
 const alvoOlhar = new THREE.Vector3();
-vestir(PELES[0]);
+vestir(PELES[temAPele(dados.pele) ? dados.pele : 0]);
+conferirPeles();
 reiniciar();
 escolherNivel(nivel);
 ajustar();
@@ -889,7 +1030,7 @@ renderer.setAnimationLoop(() => {
     }
     acc += dt;
     while (acc >= passoAtual && estado === 'jogando') { acc -= passoAtual; tique(); passoAtual = passo(); }
-    if (estado === 'jogando') { conferirBlocos(); conferirEspecial(); }
+    if (estado === 'jogando') { conferirBlocos(); conferirEspecial(); conferirMetas(); }
   }
   if (estado === 'jogando') ultimoT = Math.min(1, acc / passoAtual);
   else if (estado === 'fim') ultimoT = 0;

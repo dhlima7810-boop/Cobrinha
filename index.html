@@ -82,6 +82,23 @@
   .botao--fraco { color: var(--osso-fraco); font-size: 13px; }
   .botao--ouro { color: var(--ouro); border-color: var(--ouro-fraco); }
 
+  /* ---------- vestiário ---------- */
+  .vitrine { display: grid; gap: 10px; width: min(92vw, 680px); max-height: 56vh; overflow: auto;
+             grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); padding: 2px; }
+  .cobra { display: grid; gap: 4px; padding: 0 0 8px; border: 1px solid #262c23; background: transparent;
+           color: var(--osso); font: inherit; cursor: pointer; text-align: center;
+           transition: border-color .25s, color .25s; }
+  .cobra:hover, .cobra:focus-visible { border-color: var(--ouro-fraco); outline: none; }
+  .cobra__pele { height: 58px; background-size: 150% auto; background-position: center;
+                 filter: saturate(1.05); }
+  .cobra__nome { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; }
+  .cobra__como { font-size: 11px; font-style: italic; color: var(--osso-fraco); padding: 0 6px; }
+  .cobra--presa { color: var(--osso-fraco); }
+  .cobra--presa .cobra__pele { filter: grayscale(1) brightness(.4); }
+  .cobra--presa { cursor: not-allowed; }
+  .cobra--vestida { border-color: var(--ouro); }
+  .cobra--vestida .cobra__nome { color: var(--ouro); }
+
   @media (max-height: 560px) { h1 { font-size: clamp(24px, 6vw, 38px); } .botao { padding: 10px 16px; } }
 </style>
 </head>
@@ -118,6 +135,7 @@
     <button class="botao botao--ouro" id="revBanco" hidden></button>
     <button class="botao" id="jogar">Jogar</button>
     <button class="botao botao--fraco" id="abrirNiveis">Dificuldade</button>
+    <button class="botao botao--fraco" id="abrirVest">Vestiário</button>
     <button class="botao botao--fraco" id="menuConfig">Configurações</button>
   </div>
 
@@ -139,6 +157,13 @@
     <button class="botao" data-nivel="dificil">Difícil · meta 40</button>
     <button class="botao botao--fraco" id="voltarNiveis">Voltar</button>
   </div>
+</div>
+
+<div class="painel" id="pvest" hidden>
+  <h2>Vestiário</h2>
+  <p id="subVest">As cobras vêm dos pontos somados na vida; as últimas, de desafios</p>
+  <div class="vitrine" id="vitrine"></div>
+  <button class="botao botao--fraco" id="fecharVest">Voltar</button>
 </div>
 
 <div class="painel" id="pconfig" hidden>

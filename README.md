@@ -14,6 +14,11 @@ Abra o `index.html` com duplo clique. Não precisa de servidor.
   **roxa** lento, **dourada** pontos em dobro.
 - **Obstáculos** caem do céu ao longo da partida; a marca no chão avisa onde.
 - Ao morrer dá para **reviver** uma vez, com um token ou 10 pontos do banco.
+- **Vestiário** com 30 cobras. As 24 primeiras vêm dos **pontos somados na
+  vida** (que nunca se gastam); as 6 últimas, de **desafios** — comer 5 maçãs
+  de poder numa partida, chegar a 20 pontos sem usar poder, quebrar 10
+  obstáculos com o escudo, ficar 3 minutos viva, jogar 50 partidas e bater a
+  meta dos três níveis. A cobra que você veste aparece no jogo inteiro.
 
 ## Arquivos
 
