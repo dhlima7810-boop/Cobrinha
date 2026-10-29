@@ -46,78 +46,307 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 document.body.prepend(renderer.domElement);
 
 const cena = new THREE.Scene();
-cena.background = new THREE.Color(0x0b1020);
-cena.fog = new THREE.Fog(0x0b1020, 22, 48);
+cena.background = new THREE.Color(0x0a0f0c);
+cena.fog = new THREE.Fog(0x0a0f0c, 22, 48);
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
 const base = new THREE.Vector3(0, 17, 13);
 
-cena.add(new THREE.HemisphereLight(0xbfe6ff, 0x1a1030, 1.1));
-const sol = new THREE.DirectionalLight(0xffffff, 2.2);
+cena.add(new THREE.HemisphereLight(0xcfe0cc, 0x151109, 1.0));
+const sol = new THREE.DirectionalLight(0xfff2da, 2.3);
 sol.position.set(6, 14, 8);
 sol.castShadow = true;
 sol.shadow.mapSize.set(1024, 1024);
 Object.assign(sol.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11 });
 cena.add(sol);
 
-// chão xadrez
+// O chão não é xadrez de fliperama: é pedra escura com escamas quase
+// imperceptíveis. Ninguém olha e vê escamas; sente que o lugar é dela.
 const cv = document.createElement('canvas');
-cv.width = cv.height = 128;
+cv.width = cv.height = 256;
 const g = cv.getContext('2d');
-[['#16213a', '#1b2947'], ['#1b2947', '#16213a']].forEach((linha, y) =>
-  linha.forEach((cor, x) => { g.fillStyle = cor; g.fillRect(x * 64, y * 64, 64, 64); }));
+g.fillStyle = '#1b231a';
+g.fillRect(0, 0, 256, 256);
+// grão fino, nunca manchão: mancha grande repete e a emenda do ladrilho salta
+for (let i = 0; i < 9000; i++) {
+  const t = (i * 2654435761) >>> 0;
+  g.fillStyle = `rgba(${200 + (t % 40)},${215 + (t % 30)},${195 + (t % 35)},${.012 + (t % 7) * .004})`;
+  g.fillRect((t >> 3) % 256, (t >> 11) % 256, 1 + (t % 2), 1 + ((t >> 1) % 2));
+}
+{                                                  // as escamas, em voz baixa
+  const larg = 64, alt = 40;
+  for (let linha = -1; linha * alt < 296; linha++) {
+    const y = linha * alt, recuo = (linha % 2) * larg / 2;
+    for (let col = -1; col * larg < 320; col++) {
+      const x = col * larg + recuo;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.quadraticCurveTo(x + larg / 2, y + alt * 1.5, x + larg, y);
+      g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 3; g.stroke();
+      g.strokeStyle = 'rgba(205,225,195,.075)'; g.lineWidth = 1.3; g.stroke();
+    }
+  }
+}
 const tex = new THREE.CanvasTexture(cv);
 tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-tex.repeat.set(N / 2, N / 2);
+tex.repeat.set(4, 4);
 tex.colorSpace = THREE.SRGBColorSpace;
 tex.anisotropy = 8;
-const chao = new THREE.Mesh(new THREE.PlaneGeometry(N, N), new THREE.MeshStandardMaterial({ map: tex, roughness: .9 }));
+const chao = new THREE.Mesh(new THREE.PlaneGeometry(N, N), new THREE.MeshStandardMaterial({ map: tex, roughness: .95 }));
 chao.rotation.x = -Math.PI / 2;
 chao.receiveShadow = true;
 cena.add(chao);
 
-// muros de neon
-const neon = new THREE.MeshStandardMaterial({ color: 0x0891b2, emissive: 0x22d3ee, emissiveIntensity: 1.4 });
-[[N + .6, .3, 0, N / 2 + .15], [N + .6, .3, 0, -N / 2 - .15], [.3, N, N / 2 + .15, 0], [.3, N, -N / 2 - .15, 0]]
+// A grade das casas, gravada por cima: fina, quase sumindo. Dá ao tabuleiro
+// cara de placa riscada e, de quebra, deixa medir distância antes de virar.
+{
+  const cg = document.createElement('canvas');
+  cg.width = cg.height = 64;
+  const h = cg.getContext('2d');
+  h.strokeStyle = 'rgba(226,228,208,.085)';
+  h.lineWidth = 1;
+  h.strokeRect(.5, .5, 63, 63);
+  const risco = new THREE.CanvasTexture(cg);
+  risco.wrapS = risco.wrapT = THREE.RepeatWrapping;
+  risco.repeat.set(N, N);
+  risco.anisotropy = 8;
+  const grade = new THREE.Mesh(
+    new THREE.PlaneGeometry(N, N),
+    new THREE.MeshBasicMaterial({ map: risco, transparent: true, depthWrite: false })
+  );
+  grade.rotation.x = -Math.PI / 2;
+  grade.position.y = .012;
+  cena.add(grade);
+}
+
+// Os muros viram friso: baixo, fosco, cor de osso velho. Moldura de placa,
+// não tubo de neon.
+const friso = new THREE.MeshStandardMaterial({ color: 0x8d7f5e, roughness: .62, metalness: .35, emissive: 0x2a2416, emissiveIntensity: .35 });
+[[N + .5, .25, 0, N / 2 + .12], [N + .5, .25, 0, -N / 2 - .12], [.25, N, N / 2 + .12, 0], [.25, N, -N / 2 - .12, 0]]
   .forEach(([w, d, x, z]) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, .5, d), neon);
-    m.position.set(x, .25, z);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, .16, d), friso);
+    m.position.set(x, .08, z);
+    m.castShadow = m.receiveShadow = true;
     cena.add(m);
   });
 
+// A primeira do elenco. As outras 29 entram com o vestiário.
+const PELES = [
+  { nome: 'Verde-mata', padrao: 'manchas', base: '#3f7d38', escuro: '#27551f', claro: '#86c266' },
+];
+
+// ---------- a pele: escamas desenhadas, não pintadas à mão ----------
+// Uma cobra é um registro de dados, e a textura sai dele. São seis padrões
+// combinados com as cores: é isso que faz trinta cobras caberem numa tabela
+// em vez de trinta imagens.
+const LADO = 256;                 // a textura é quadrada e repete nos dois eixos
+
+// Desenha a forma e as cópias que atravessam a borda, senão o padrão corta
+// feio na emenda — a textura dá a volta no corpo e repete ao longo dele.
+function emTudoQuantoEh(g, x, y, desenhar) {
+  for (const dx of [-LADO, 0, LADO]) for (const dy of [-LADO, 0, LADO]) desenhar(x + dx, y + dy);
+}
+
+const PADROES = {
+  liso() {},
+  aneis(g, p) {                                     // faixas dando a volta no corpo
+    g.fillStyle = p.escuro;
+    for (let y = 0; y < LADO; y += 64) g.fillRect(0, y, LADO, 26);
+    g.fillStyle = p.claro;
+    for (let y = 0; y < LADO; y += 64) g.fillRect(0, y + 28, LADO, 7);
+  },
+  listras(g, p) {                                   // faixas correndo ao longo
+    g.fillStyle = p.escuro;
+    for (let x = 0; x < LADO; x += 85) g.fillRect(x, 0, 30, LADO);
+  },
+  manchas(g, p) {
+    g.fillStyle = p.escuro;
+    for (let i = 0; i < 14; i++) {
+      const x = (i * 97 + 31) % LADO, y = (i * 61 + 17) % LADO, r = 17 + (i % 4) * 7;
+      emTudoQuantoEh(g, x, y, (a, b) => {
+        g.beginPath(); g.ellipse(a, b, r, r * .72, i, 0, 7); g.fill();
+      });
+    }
+  },
+  losangos(g, p) {
+    g.strokeStyle = p.escuro; g.lineWidth = 7;
+    for (let y = 0; y < LADO; y += 48) for (let x = 0; x < LADO; x += 64) {
+      const ox = (y / 48) % 2 ? 32 : 0;
+      emTudoQuantoEh(g, x + ox, y, (a, b) => {
+        g.beginPath(); g.moveTo(a, b - 20); g.lineTo(a + 26, b); g.lineTo(a, b + 20); g.lineTo(a - 26, b); g.closePath(); g.stroke();
+      });
+    }
+  },
+  malha(g, p) {
+    g.strokeStyle = p.escuro; g.lineWidth = 5;
+    for (let k = -LADO; k < LADO * 2; k += 38) {
+      g.beginPath(); g.moveTo(k, 0); g.lineTo(k + LADO, LADO); g.stroke();
+      g.beginPath(); g.moveTo(k, LADO); g.lineTo(k + LADO, 0); g.stroke();
+    }
+  },
+};
+
+// As escamas por cima: fileiras encaixadas meio a meio, borda em sombra e
+// brilho no alto. Elas não tapam o padrão — só o põem em relevo.
+function escamarPorCima(g) {
+  const larg = LADO / 10, alt = LADO / 16;
+  for (let linha = -1; linha * alt < LADO + alt; linha++) {
+    const y = linha * alt, recuo = (linha % 2) * larg / 2;
+    for (let col = -1; col * larg < LADO + larg; col++) {
+      const x = col * larg + recuo;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.quadraticCurveTo(x + larg / 2, y + alt * 1.5, x + larg, y);
+      g.strokeStyle = 'rgba(0,0,0,.34)'; g.lineWidth = 2.4; g.stroke();
+      g.strokeStyle = 'rgba(255,255,255,.13)'; g.lineWidth = 1.2;
+      g.beginPath();
+      g.moveTo(x + 2, y - 2);
+      g.quadraticCurveTo(x + larg / 2, y + alt * 1.2, x + larg - 2, y - 2);
+      g.stroke();
+    }
+  }
+}
+
+// Uma textura por cobra, feita na primeira vez que alguém a veste e guardada.
+const texturas = new Map();
+function texturaDaPele(pele) {
+  if (texturas.has(pele.nome)) return texturas.get(pele.nome);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = LADO;
+  const g = cv.getContext('2d');
+  g.fillStyle = pele.base;
+  g.fillRect(0, 0, LADO, LADO);
+  PADROES[pele.padrao](g, pele);
+  escamarPorCima(g);
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  texturas.set(pele.nome, t);
+  return t;
+}
+
 // ---------- cobra ----------
-// Um pouco menor que a casa: a cobra respira dentro do circuito em vez de
-// entupi-lo. Abaixo de .45 os gomos desencostam e viram contas soltas.
-const RAIO = .47;
-const geoCorpo = new THREE.SphereGeometry(RAIO, 24, 16);
-const segs = [];
-const cabeca = new THREE.Group();
+// Um tubo contínuo, não bolinhas soltas: a geometria é alocada de uma vez no
+// comprimento máximo e só as posições são reescritas a cada quadro. Criar
+// TubeGeometry por quadro encheria a memória de lixo a 60fps.
+const RAIO = .46;
+const ANEL = 14;                                  // vértices ao redor do corpo
+const MAX_PONTOS = 420;                           // amostras ao longo do corpo
+const UP = new THREE.Vector3(0, 1, 0);
+
+const geoCobra = new THREE.BufferGeometry();
+const posCobra = new Float32Array(MAX_PONTOS * ANEL * 3);
+const norCobra = new Float32Array(MAX_PONTOS * ANEL * 3);
+const uvCobra = new Float32Array(MAX_PONTOS * ANEL * 2);
+const corCobra = new Float32Array(MAX_PONTOS * ANEL * 3);
 {
-  const crânio = new THREE.Mesh(geoCorpo, new THREE.MeshStandardMaterial({ roughness: .35 }));
-  crânio.scale.setScalar(1.12);
+  const indices = [];
+  for (let i = 0; i < MAX_PONTOS - 1; i++)
+    for (let j = 0; j < ANEL; j++) {
+      const a = i * ANEL + j, b = i * ANEL + (j + 1) % ANEL;
+      const c = (i + 1) * ANEL + j, d = (i + 1) * ANEL + (j + 1) % ANEL;
+      indices.push(a, c, b, b, c, d);
+    }
+  geoCobra.setIndex(indices);
+  geoCobra.setAttribute('position', new THREE.BufferAttribute(posCobra, 3));
+  geoCobra.setAttribute('normal', new THREE.BufferAttribute(norCobra, 3));
+  geoCobra.setAttribute('uv', new THREE.BufferAttribute(uvCobra, 2));
+  geoCobra.setAttribute('color', new THREE.BufferAttribute(corCobra, 3));
+  geoCobra.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 40);
+}
+const matCobra = new THREE.MeshStandardMaterial({ roughness: .42, vertexColors: true });
+const corpoCobra = new THREE.Mesh(geoCobra, matCobra);
+corpoCobra.castShadow = true;
+corpoCobra.frustumCulled = false;
+cena.add(corpoCobra);
+
+const cabeca = new THREE.Group();
+const crânio = new THREE.Mesh(new THREE.SphereGeometry(RAIO * 1.12, 24, 16), new THREE.MeshStandardMaterial({ roughness: .35 }));
+{
   crânio.castShadow = true;
+  crânio.scale.set(1, .92, 1.18);                 // focinho, não bola
   cabeca.add(crânio);
   for (const lado of [-1, 1]) {
-    const olho = new THREE.Mesh(new THREE.SphereGeometry(.15, 12, 10), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-    olho.position.set(lado * .27, .23, .355);
-    const pupila = new THREE.Mesh(new THREE.SphereGeometry(.08, 10, 8), new THREE.MeshBasicMaterial({ color: 0x000000 }));
-    pupila.position.set(0, 0, .1);
+    const olho = new THREE.Mesh(new THREE.SphereGeometry(.14, 12, 10), new THREE.MeshStandardMaterial({ color: 0xf8f4e6, roughness: .2 }));
+    olho.position.set(lado * .26, .2, .33);
+    const pupila = new THREE.Mesh(new THREE.SphereGeometry(.075, 10, 8), new THREE.MeshBasicMaterial({ color: 0x0b0b0b }));
+    pupila.position.set(0, 0, .09);
     olho.add(pupila);
     cabeca.add(olho);
   }
   cena.add(cabeca);
-  segs.push(cabeca);
 }
-const corpo = i => {
-  while (segs.length <= i) {
-    const m = new THREE.Mesh(geoCorpo, new THREE.MeshStandardMaterial({ roughness: .4 }));
-    m.castShadow = true;
-    cena.add(m);
-    segs.push(m);
+
+// Vestir é trocar a textura dos dois, corpo e cabeça. Nada mais.
+function vestir(pele) {
+  const t = texturaDaPele(pele);
+  t.repeat.set(1, 1);
+  matCobra.map = t;
+  matCobra.needsUpdate = true;
+  crânio.material.map = t;
+  crânio.material.needsUpdate = true;
+}
+
+// A linha do corpo, reaproveitada quadro a quadro para não gerar lixo.
+const linha = Array.from({ length: N * N + 8 }, () => new THREE.Vector3());
+const curva = new THREE.CatmullRomCurve3([], false, 'catmullrom', .5);
+const pA = new THREE.Vector3(), pB = new THREE.Vector3();
+const tang = new THREE.Vector3(), lado = new THREE.Vector3(), normal = new THREE.Vector3();
+
+function desenharCobra(t) {
+  // 1. a linha de centro, interpolada entre a casa anterior e a atual
+  for (let i = 0; i < cobra.length; i++) {
+    const s = cobra[i], p = anterior[i] || s;
+    linha[i].set(mundo(p.x + (s.x - p.x) * t), .5, mundo(p.y + (s.y - p.y) * t));
   }
-  return segs[i];
-};
-const material = m => (m.isGroup ? m.children[0] : m).material;
+  curva.points = linha.slice(0, Math.max(2, cobra.length));
+
+  // 2. as amostras ao longo dela: a curva arredonda as quinas sozinha
+  const n = Math.min(MAX_PONTOS, Math.max(12, cobra.length * 5));
+  const vermelha = estado === 'fim' && tremor > .02;
+  let percorrido = 0;
+  for (let i = 0; i < n; i++) {
+    const u = i / (n - 1);
+    curva.getPoint(u, pA);
+    curva.getTangent(u, tang).normalize();
+    lado.crossVectors(tang, UP);
+    if (lado.lengthSq() < 1e-6) lado.set(1, 0, 0);
+    lado.normalize();
+    normal.crossVectors(lado, tang).normalize();
+
+    if (i) percorrido += pA.distanceTo(pB);
+    pB.copy(pA);
+
+    // afina no rabo e logo atrás da cabeça: pescoço e ponta
+    // afina ao longo do último terço, não só na pontinha, senão o rabo
+    // termina cortado em vez de terminar em ponta
+    const r = RAIO * Math.min(1, 1.06 - Math.pow(u, 3) * .82) * Math.min(1, .58 + u * 9);
+    const escuro = 1 - u * .42;                   // escurece rumo à cauda
+    for (let j = 0; j < ANEL; j++) {
+      const a = (j / ANEL) * Math.PI * 2, cs = Math.cos(a), sn = Math.sin(a);
+      const k = (i * ANEL + j) * 3;
+      posCobra[k] = pA.x + (lado.x * cs + normal.x * sn) * r;
+      posCobra[k + 1] = pA.y + (lado.y * cs + normal.y * sn) * r;
+      posCobra[k + 2] = pA.z + (lado.z * cs + normal.z * sn) * r;
+      norCobra[k] = lado.x * cs + normal.x * sn;
+      norCobra[k + 1] = lado.y * cs + normal.y * sn;
+      norCobra[k + 2] = lado.z * cs + normal.z * sn;
+      uvCobra[(i * ANEL + j) * 2] = j / ANEL;
+      uvCobra[(i * ANEL + j) * 2 + 1] = percorrido * .9;
+      corCobra[k] = vermelha ? escuro : escuro;
+      corCobra[k + 1] = vermelha ? escuro * .25 : escuro;
+      corCobra[k + 2] = vermelha ? escuro * .22 : escuro;
+    }
+  }
+  geoCobra.setDrawRange(0, (n - 1) * ANEL * 6);
+  for (const nome of ['position', 'normal', 'uv', 'color']) geoCobra.getAttribute(nome).needsUpdate = true;
+
+  // 3. a cabeça pousa no começo da linha
+  curva.getPoint(0, pA);
+  cabeca.position.copy(pA);
+  crânio.material.color.setRGB(vermelha ? 1 : 1, vermelha ? .25 : 1, vermelha ? .22 : 1);
+}
 
 // bolha do escudo, em volta da cabeça
 const bolha = new THREE.Mesh(
@@ -286,9 +515,16 @@ function apressar() {
   acc = t * passoAtual;
 }
 
+const VOLTA_DO_ARO = 2 * Math.PI * 44;            // o perímetro do aro no SVG
+
 function hud() {
   const n = NIVEIS[nivel];
   $('pts').textContent = pontos ?? 0;
+  // O aro é o placar: fecha conforme a meta chega. Fechou, a cobra mordeu o
+  // próprio rabo — é o ouroboros, e é a regra do jogo.
+  const parte = Math.min(1, (pontos ?? 0) / n.meta);
+  $('aroFio').style.strokeDashoffset = (1 - parte) * VOLTA_DO_ARO;
+  $('aro').classList.toggle('aro--fechado', parte >= 1);
   $('rec').textContent = recorde();
   $('meta').textContent = `${n.nome} · meta ${n.meta}`;
   $('saldo').textContent = `${dados.tokens} token${dados.tokens === 1 ? '' : 's'} · banco ${dados.banco}`;
@@ -634,6 +870,7 @@ addEventListener('resize', ajustar);
 
 const relogio = new THREE.Clock();
 const alvoOlhar = new THREE.Vector3();
+vestir(PELES[0]);
 reiniciar();
 escolherNivel(nivel);
 ajustar();
@@ -658,15 +895,7 @@ renderer.setAnimationLoop(() => {
   else if (estado === 'fim') ultimoT = 0;
   const t = ultimoT;
 
-  // cobra, interpolada entre a casa anterior e a atual
-  cobra.forEach((s, i) => {
-    const p = anterior[i] || s, m = i ? corpo(i) : cabeca;
-    m.visible = true;
-    m.position.set(mundo(p.x + (s.x - p.x) * t), .5, mundo(p.y + (s.y - p.y) * t));
-    const f = i / cobra.length;
-    material(m).color.setHSL(estado === 'fim' && tremor ? 0 : .38 - .1 * f, .75, .52 - .22 * f);
-  });
-  for (let i = cobra.length; i < segs.length; i++) segs[i].visible = false;
+  desenharCobra(t);
 
   const proximo = fila[0] || dir;                    // a cabeça responde à tecla, não ao tique
   const alvo = Math.atan2(proximo.x, proximo.y);
