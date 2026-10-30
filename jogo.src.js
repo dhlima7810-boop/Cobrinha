@@ -349,17 +349,7 @@ function vestir(qual) {
   matCobra.needsUpdate = true;
   crânio.material.map = t;
   crânio.material.needsUpdate = true;
-  // a tela de entrada usa uma CÓPIA: mesma imagem, repetição própria, senão
-  // mexer no close mexeria nas escamas da cobra em jogo
-  // No cilindro deitado o eixo da textura cai de lado: sem girar 90 graus as
-  // escamas viram listras onduladas em pe, que e o que parecia errado.
-  const grande = t.clone();
-  grande.needsUpdate = true;
-  grande.center.set(.5, .5);
-  grande.rotation = Math.PI / 2;
-  grande.repeat.set(7, 11);
-  pele.material.map = grande;
-  pele.material.needsUpdate = true;
+  pintarEscamas(qual);          // e a entrada ganha a mesma pele, em relevo
 }
 
 // A miniatura de cada cobra é a própria textura dela — não um quadradinho de
@@ -439,17 +429,95 @@ function desenharCobra(t) {
 }
 
 // ---------- a tela de entrada: a pele dela, em close ----------
-// Não é papel de parede: é o corpo da cobra que você vestiu, visto de perto.
-// Apertar Jogar não troca de tela — ela rasteja para fora e a câmera recua
-// junto, e quando você percebe já está jogando.
-const pele = new THREE.Mesh(
-  new THREE.CylinderGeometry(5.5, 5.5, 70, 48, 1, true),
-  new THREE.MeshStandardMaterial({ roughness: .5, side: THREE.DoubleSide })
-);
-pele.rotation.z = Math.PI / 2;                    // deitada, atravessando a tela
+// As escamas aqui NÃO são textura pintada: são peças de verdade, cada uma
+// pegando luz sozinha. É a diferença entre o desenho de uma pele e uma pele.
+// Uma InstancedMesh desenha todas numa chamada só.
+const ESCAMAS_VOLTA = 32;        // quantas dão a volta na frente do corpo
+const ESCAMAS_FIO = 52;          // quantas ao longo dele
+const R_CORPO = 5.5;
+const PASSO_FIO = .42;
+const X0_FIO = -12;              // começa atrás: ainda há pele quando ela desliza
+
+const pele = new THREE.Group();
 pele.position.set(0, 2.2, 2);
-pele.castShadow = pele.receiveShadow = false;
 cena.add(pele);
+
+// a carne por baixo, para a fresta entre escamas não virar buraco no vazio
+{
+  const carne = new THREE.Mesh(
+    new THREE.CylinderGeometry(R_CORPO * .96, R_CORPO * .96, 80, 40, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0x12160e, roughness: .95, side: THREE.DoubleSide })
+  );
+  carne.rotation.z = Math.PI / 2;
+  pele.add(carne);
+}
+
+// A escama: cúpula achatada e comprida. Verniz e iridescência dão o brilho
+// que muda com o ângulo — é isso que tira a cara de papel pintado.
+const geoEscama = new THREE.SphereGeometry(.5, 8, 4, 0, Math.PI * 2, 0, Math.PI * .5);
+geoEscama.scale(.46, .24, .9);   // estreita, fina e comprida: escama, não seixo
+// Verniz por cima dá o segundo brilho, que é o que tira a cara de papel.
+// Iridescência e sheen ficaram de fora: o sombreador triplicava de preço e
+// quase não aparece sem mapa de ambiente.
+const matEscama = new THREE.MeshPhysicalMaterial({
+  roughness: .22, metalness: .3, clearcoat: 1, clearcoatRoughness: .14,
+});
+const escamas = new THREE.InstancedMesh(geoEscama, matEscama, ESCAMAS_VOLTA * ESCAMAS_FIO);
+pele.add(escamas);
+
+// uma luz rasante só da entrada: anda com a pele e some junto com ela
+const luzPele = new THREE.PointLight(0xfff0d0, 34, 26);
+luzPele.position.set(3, 7, 8);
+pele.add(luzPele);
+
+// Onde cada escama fica. Só a frente é povoada: ninguém vê o outro lado, e
+// milhares de triângulos escondidos custam o mesmo que os visíveis.
+{
+  const giro = new THREE.Matrix4(), tombo = new THREE.Matrix4(), m = new THREE.Matrix4();
+  const cima = new THREE.Vector3(), lado = new THREE.Vector3(), frente = new THREE.Vector3(-1, 0, 0);
+  let k = 0;
+  for (let j = 0; j < ESCAMAS_FIO; j++) {
+    const x = X0_FIO + j * PASSO_FIO;
+    for (let i = 0; i < ESCAMAS_VOLTA; i++) {
+      // arco da frente, com as fileiras encaixadas meio a meio
+      // o arco é centrado na CÂMERA (+Z, ou seja π/2), não no alto do corpo:
+      // centrado no alto, a frente ficava pelada e só o topo tinha escama
+      const a = (Math.PI / 2 - 1.22) + ((i + (j % 2) * .5) / ESCAMAS_VOLTA) * 2.44;
+      cima.set(0, Math.cos(a), Math.sin(a));
+      lado.crossVectors(cima, frente).normalize();
+      giro.makeBasis(lado, cima, frente.clone());
+      tombo.makeRotationAxis(lado, -.3);           // levanta a borda: uma monta na outra
+      m.multiplyMatrices(tombo, giro);
+      m.setPosition(x, Math.cos(a) * R_CORPO, Math.sin(a) * R_CORPO);
+      escamas.setMatrixAt(k++, m);
+    }
+  }
+  escamas.instanceMatrix.needsUpdate = true;
+}
+
+// A cor de cada escama vem da textura da cobra vestida: o padrão dela (anéis,
+// manchas, losangos) reaparece em relevo, peça por peça.
+const leiturasDePele = new Map();
+function pintarEscamas(qual) {
+  let img = leiturasDePele.get(qual.nome);
+  if (!img) {
+    const cv = texturaDaPele(qual).image;
+    img = cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, cv.width, cv.height);
+    leiturasDePele.set(qual.nome, img);
+  }
+  const cor = new THREE.Color();
+  let k = 0;
+  for (let j = 0; j < ESCAMAS_FIO; j++) {
+    for (let i = 0; i < ESCAMAS_VOLTA; i++) {
+      const u = Math.floor((((i / ESCAMAS_VOLTA) * 1.6) % 1) * LADO);
+      const v = Math.floor(((((j * PASSO_FIO) / 4) % 1) + 1) % 1 * LADO);
+      const p = (v * LADO + u) * 4;
+      cor.setRGB(img.data[p] / 255, img.data[p + 1] / 255, img.data[p + 2] / 255).convertSRGBToLinear();
+      escamas.setColorAt(k++, cor);
+    }
+  }
+  escamas.instanceColor.needsUpdate = true;
+}
 
 const POSE_MENU = new THREE.Vector3(0, 2.6, 12.2);
 const OLHAR_MENU = new THREE.Vector3(0, 2.2, 2);
@@ -956,7 +1024,6 @@ function comecar(n) {
   saida = doMenu ? 0 : 1;
   estado = doMenu ? 'saindo' : 'jogando';
   pele.visible = doMenu;
-  pele.position.x = 0;
   fecharPaineis();
 }
 
@@ -975,7 +1042,6 @@ function sairParaMenu() {
   estado = 'pronto';
   saida = 0;
   pele.visible = true;
-  pele.position.x = 0;
   abrirPainel('menu', 'Cobrinha 3D', 'Escolha o nível');
 }
 
@@ -1137,11 +1203,11 @@ renderer.setAnimationLoop(() => {
   angulo += Math.atan2(Math.sin(alvo - angulo), Math.cos(alvo - angulo)) * Math.min(1, dt * 18);
   cabeca.rotation.y = angulo;
 
-  // a pele do close: parada ela respira, saindo ela dispara
+  // A pele do close: parada ela respira — anda devagar e balança de leve,
+  // como bicho dormindo. Saindo, dispara para fora do quadro.
   if (pele.visible) {
-    const mapa = pele.material.map;
-    if (mapa) mapa.offset.y -= dt * (.035 + saida * 2.6);
-    pele.position.x = -Math.pow(saida, 2) * 62;
+    pele.position.x = -((tempo * .45) % (PASSO_FIO * 2)) - Math.pow(saida, 2) * 11;
+    pele.rotation.x = Math.sin(tempo * .45) * .06;
   }
 
   bolha.visible = protegido() && estado !== 'fim';
@@ -1264,6 +1330,10 @@ renderer.setAnimationLoop(() => {
     camera.position.copy(POSE_MENU);
     alvoOlhar.copy(OLHAR_MENU);
   } else {
+    // Fora do menu e fora da saída a pele não existe. Regra única, porque a
+    // partida pode acabar no meio da transição — e aí ela ficava para sempre
+    // na frente do tabuleiro.
+    pele.visible = false;
     const cx = cabeca.position.x * .25;
     camera.position.x += (base.x + cx - camera.position.x) * Math.min(1, dt * 3);
     camera.position.y += (base.y - camera.position.y) * Math.min(1, dt * 3);
