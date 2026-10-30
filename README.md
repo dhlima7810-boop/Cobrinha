@@ -6,6 +6,11 @@ Jogo da cobrinha em 3D no navegador. Three.js, sem build e sem CDN.
 
 Abra o `index.html` com duplo clique. Não precisa de servidor.
 
+A tela de entrada é a **pele da cobra que você está vestindo**, em close.
+Apertar **Jogar** não troca de tela: ela rasteja para fora, a câmera recua
+junto e o tabuleiro aparece com a partida já correndo. Dificuldade, Vestiário
+e Configurações não disparam isso — só o Jogar.
+
 - **Jogar** começa a partida; **Dificuldade** escolhe o nível; **Configurações**
   liga ou desliga o som e a pausa ao sair da aba.
 - Setas ou WASD. No celular, deslize o dedo. **P** pausa.

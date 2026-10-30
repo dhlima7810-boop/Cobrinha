@@ -342,13 +342,24 @@ const crânio = new THREE.Mesh(new THREE.SphereGeometry(RAIO * 1.12, 24, 16), ne
 }
 
 // Vestir é trocar a textura dos dois, corpo e cabeça. Nada mais.
-function vestir(pele) {
-  const t = texturaDaPele(pele);
+function vestir(qual) {
+  const t = texturaDaPele(qual);
   t.repeat.set(1, 1);
   matCobra.map = t;
   matCobra.needsUpdate = true;
   crânio.material.map = t;
   crânio.material.needsUpdate = true;
+  // a tela de entrada usa uma CÓPIA: mesma imagem, repetição própria, senão
+  // mexer no close mexeria nas escamas da cobra em jogo
+  // No cilindro deitado o eixo da textura cai de lado: sem girar 90 graus as
+  // escamas viram listras onduladas em pe, que e o que parecia errado.
+  const grande = t.clone();
+  grande.needsUpdate = true;
+  grande.center.set(.5, .5);
+  grande.rotation = Math.PI / 2;
+  grande.repeat.set(7, 11);
+  pele.material.map = grande;
+  pele.material.needsUpdate = true;
 }
 
 // A miniatura de cada cobra é a própria textura dela — não um quadradinho de
@@ -411,13 +422,41 @@ function desenharCobra(t) {
     }
   }
   geoCobra.setDrawRange(0, (n - 1) * ANEL * 6);
-  for (const nome of ['position', 'normal', 'uv', 'color']) geoCobra.getAttribute(nome).needsUpdate = true;
+  // Só o pedaço usado sobe para a placa. Marcar o buffer inteiro reenviava
+  // 420 anéis a cada quadro para desenhar quinze — caro à toa, e pesado de
+  // verdade em máquina sem placa de vídeo.
+  for (const nome of ['position', 'normal', 'uv', 'color']) {
+    const attr = geoCobra.getAttribute(nome);
+    attr.clearUpdateRanges();
+    attr.addUpdateRange(0, n * ANEL * attr.itemSize);
+    attr.needsUpdate = true;
+  }
 
   // 3. a cabeça pousa no começo da linha
   curva.getPoint(0, pA);
   cabeca.position.copy(pA);
   crânio.material.color.setRGB(vermelha ? 1 : 1, vermelha ? .25 : 1, vermelha ? .22 : 1);
 }
+
+// ---------- a tela de entrada: a pele dela, em close ----------
+// Não é papel de parede: é o corpo da cobra que você vestiu, visto de perto.
+// Apertar Jogar não troca de tela — ela rasteja para fora e a câmera recua
+// junto, e quando você percebe já está jogando.
+const pele = new THREE.Mesh(
+  new THREE.CylinderGeometry(5.5, 5.5, 70, 48, 1, true),
+  new THREE.MeshStandardMaterial({ roughness: .5, side: THREE.DoubleSide })
+);
+pele.rotation.z = Math.PI / 2;                    // deitada, atravessando a tela
+pele.position.set(0, 2.2, 2);
+pele.castShadow = pele.receiveShadow = false;
+cena.add(pele);
+
+const POSE_MENU = new THREE.Vector3(0, 2.6, 12.2);
+const OLHAR_MENU = new THREE.Vector3(0, 2.2, 2);
+const SAIDA_DURA = 1.5;                           // segundos da saída
+let saida = 1;                                    // 0 = menu, 1 = em jogo
+const correndo = () => estado === 'jogando' || estado === 'saindo';
+const poucoMovimento = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // bolha do escudo, em volta da cabeça
 const bolha = new THREE.Mesh(
@@ -837,13 +876,17 @@ function abrirPainel(modo, titulo, sub) {
   $('revToken').textContent = `Reviver · 1 token (tem ${dados.tokens})`;
   $('revBanco').textContent = `Reviver · ${CUSTO_BANCO} pontos (banco ${dados.banco})`;
   $('pconfig').hidden = $('pniveis').hidden = $('pvest').hidden = true;
+  // Na entrada o placar não aparece: ali é a pele dela, e mais nada.
+  $('hud').hidden = modo === 'menu';
+  $('painel').classList.toggle('painel--entrada', modo === 'menu');
   $('painel').hidden = false;
   $('pausa').hidden = true;
 }
 
 function fecharPaineis() {
   $('painel').hidden = $('pconfig').hidden = $('pniveis').hidden = $('pvest').hidden = true;
-  $('pausa').hidden = estado !== 'jogando';
+  $('hud').hidden = false;
+  $('pausa').hidden = !correndo();
 }
 
 // Os dois submenus do painel: dificuldade e configurações.
@@ -867,13 +910,20 @@ function escolherNivel(n) {
 
 function comecar(n) {
   if (n) escolherNivel(n);
-  if (estado === 'jogando') return;
+  if (correndo()) return;
+  // Só vindo do menu a cobra rasteja para fora: no "jogar de novo" a câmera
+  // já está no tabuleiro, e voltar para o close para então sair seria um salto.
+  const doMenu = estado === 'pronto' && !poucoMovimento();
   reiniciar();
-  estado = 'jogando';
+  saida = doMenu ? 0 : 1;
+  estado = doMenu ? 'saindo' : 'jogando';
+  pele.visible = doMenu;
+  pele.position.x = 0;
   fecharPaineis();
 }
 
 function pausar() {
+  if (estado === 'saindo') return;                 // 1,3s: não vale interromper
   if (estado === 'jogando') {
     estado = 'pausado';
     abrirPainel('pausa', 'Pausado', `${pontos} ponto${pontos === 1 ? '' : 's'} em ${NIVEIS[nivel].nome}`);
@@ -885,6 +935,9 @@ function pausar() {
 
 function sairParaMenu() {
   estado = 'pronto';
+  saida = 0;
+  pele.visible = true;
+  pele.position.x = 0;
   abrirPainel('menu', 'Cobrinha 3D', 'Escolha o nível');
 }
 
@@ -922,7 +975,7 @@ function pintarConfig() {
 
 // ---------- entrada ----------
 function virar(x, y) {
-  if (estado !== 'jogando') return;
+  if (!correndo()) return;
   const ultima = fila.at(-1) || dir;
   if ((x === -ultima.x && y === -ultima.y) || (x === ultima.x && y === ultima.y) || fila.length > 2) return;
   fila.push({ x, y });
@@ -940,11 +993,11 @@ addEventListener('keydown', e => {
     else if (e.code === 'Escape') voltarSub();
     return;
   }
-  if (porNumero[e.code] && estado !== 'jogando' && estado !== 'pausado') comecar(porNumero[e.code]);
+  if (porNumero[e.code] && !correndo() && estado !== 'pausado') comecar(porNumero[e.code]);
   else if (e.code === 'KeyP' || e.code === 'Escape') pausar();
   else if (e.code === 'Space' || e.code === 'Enter') {
     e.preventDefault();
-    estado === 'pausado' ? pausar() : estado !== 'jogando' && comecar();
+    estado === 'pausado' ? pausar() : !correndo() && comecar();
   }
 });
 let toque;
@@ -1010,17 +1063,20 @@ addEventListener('resize', ajustar);
 
 const relogio = new THREE.Clock();
 const alvoOlhar = new THREE.Vector3();
+const ALVO_JOGO = new THREE.Vector3(0, 0, 1);
 vestir(PELES[temAPele(dados.pele) ? dados.pele : 0]);
 conferirPeles();
 reiniciar();
 escolherNivel(nivel);
 ajustar();
+saida = 0;                                        // o jogo nasce no close da pele
+pele.visible = true;
 abrirPainel('menu', 'Cobrinha 3D', 'Escolha o nível');
 
 renderer.setAnimationLoop(() => {
   const dt = Math.min(relogio.getDelta(), .05), tempo = relogio.elapsedTime;
 
-  if (estado === 'jogando') {
+  if (correndo()) {
     tempoJogo += dt;
     if (invul > 0) invul -= dt;
     if (poder) {
@@ -1029,10 +1085,10 @@ renderer.setAnimationLoop(() => {
       hud();
     }
     acc += dt;
-    while (acc >= passoAtual && estado === 'jogando') { acc -= passoAtual; tique(); passoAtual = passo(); }
-    if (estado === 'jogando') { conferirBlocos(); conferirEspecial(); conferirMetas(); }
+    while (acc >= passoAtual && correndo()) { acc -= passoAtual; tique(); passoAtual = passo(); }
+    if (correndo()) { conferirBlocos(); conferirEspecial(); conferirMetas(); }
   }
-  if (estado === 'jogando') ultimoT = Math.min(1, acc / passoAtual);
+  if (correndo()) ultimoT = Math.min(1, acc / passoAtual);
   else if (estado === 'fim') ultimoT = 0;
   const t = ultimoT;
 
@@ -1042,6 +1098,13 @@ renderer.setAnimationLoop(() => {
   const alvo = Math.atan2(proximo.x, proximo.y);
   angulo += Math.atan2(Math.sin(alvo - angulo), Math.cos(alvo - angulo)) * Math.min(1, dt * 18);
   cabeca.rotation.y = angulo;
+
+  // a pele do close: parada ela respira, saindo ela dispara
+  if (pele.visible) {
+    const mapa = pele.material.map;
+    if (mapa) mapa.offset.y -= dt * (.035 + saida * 2.6);
+    pele.position.x = -Math.pow(saida, 2) * 62;
+  }
 
   bolha.visible = protegido() && estado !== 'fim';
   if (bolha.visible) {
@@ -1148,11 +1211,24 @@ renderer.setAnimationLoop(() => {
     if (d.vida <= 0) { cena.remove(o); o.material.dispose(); ondas.splice(i, 1); }
   }
 
-  // câmera: acompanha de leve a cabeça; no menu, balança sozinha
-  const cx = estado === 'jogando' || estado === 'pausado' ? cabeca.position.x * .25 : Math.sin(tempo * .4) * 3;
-  camera.position.x += (base.x + cx - camera.position.x) * Math.min(1, dt * 3);
-  camera.position.y += (base.y - camera.position.y) * Math.min(1, dt * 3);
-  camera.position.z += (base.z - camera.position.z) * Math.min(1, dt * 3);
+  // A câmera: no menu está colada na pele; apertar Jogar a faz recuar até o
+  // tabuleiro. Uma coisa só, sem corte — por isso o menu não "fecha".
+  if (estado === 'saindo') {
+    saida = Math.min(1, saida + dt / SAIDA_DURA);
+    const e = saida * saida * (3 - 2 * saida);     // sai devagar, acelera e assenta
+    camera.position.lerpVectors(POSE_MENU, base, e);
+    alvoOlhar.lerpVectors(OLHAR_MENU, ALVO_JOGO, e);
+    if (saida >= 1) { estado = 'jogando'; pele.visible = false; $('pausa').hidden = false; }
+  } else if (estado === 'pronto') {
+    camera.position.copy(POSE_MENU);
+    alvoOlhar.copy(OLHAR_MENU);
+  } else {
+    const cx = cabeca.position.x * .25;
+    camera.position.x += (base.x + cx - camera.position.x) * Math.min(1, dt * 3);
+    camera.position.y += (base.y - camera.position.y) * Math.min(1, dt * 3);
+    camera.position.z += (base.z - camera.position.z) * Math.min(1, dt * 3);
+    alvoOlhar.set(cabeca.position.x * .1, 0, 1);
+  }
   tremor *= Math.pow(.02, dt);
   camera.position.x += (Math.random() - .5) * tremor;
   camera.position.y += (Math.random() - .5) * tremor;
@@ -1163,7 +1239,6 @@ renderer.setAnimationLoop(() => {
     camera.position.x += Math.sin(abaloT * 31) * amp * .45;
     if (amp < .0015) abalo = 0;
   }
-  alvoOlhar.set(cabeca.position.x * .1, 0, 1);
   camera.lookAt(alvoOlhar);
 
   renderer.render(cena, camera);

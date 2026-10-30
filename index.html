@@ -21,6 +21,7 @@
   canvas { display: block; }
 
   /* ---------- placar ---------- */
+  .hud[hidden] { display: none; }
   .hud { position: fixed; inset: 16px 20px auto; display: flex; justify-content: space-between;
          align-items: flex-start; gap: 12px; pointer-events: none; }
   .hud__dir { text-align: right; }
@@ -60,7 +61,8 @@
   /* ---------- painéis ---------- */
   .painel { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center;
             text-align: center; gap: 12px; padding: 28px 20px; overflow: auto;
-            background: radial-gradient(closest-side, rgba(10,15,12,.86), rgba(10,15,12,.4)); }
+            background: radial-gradient(closest-side, rgba(10,15,12,.9), rgba(10,15,12,.5)); }
+  .painel--entrada { background: radial-gradient(closest-side, rgba(8,12,9,.82), rgba(8,12,9,.42)); }
   .painel[hidden] { display: none; }
   h1 { font-size: clamp(32px, 7vw, 64px); font-weight: 400; letter-spacing: .16em;
        text-transform: uppercase; line-height: 1.1; color: var(--osso); }
@@ -103,7 +105,7 @@
 </style>
 </head>
 <body>
-<div class="hud">
+<div class="hud" id="hud">
   <div>
     <div class="aro" id="aro">
       <svg viewBox="0 0 100 100" aria-hidden="true">
