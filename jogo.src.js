@@ -56,6 +56,32 @@ const cena = new THREE.Scene();
 cena.background = new THREE.Color(0x0a0f0c);
 cena.fog = new THREE.Fog(0x0a0f0c, 22, 48);
 
+// O que está além do tabuleiro não pode ser um buraco. Uma abóbada com
+// gradiente dá um lugar: escuro no alto, uma linha de horizonte apenas
+// insinuada na altura do chão, escuro de novo embaixo. Sem ela, a saída do
+// menu passava por um instante de tela preta — era o "nada" que aparecia.
+{
+  const cvF = document.createElement('canvas');
+  cvF.width = 4; cvF.height = 256;
+  const gF = cvF.getContext('2d');
+  const grad = gF.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, '#040705');
+  grad.addColorStop(.46, '#0d140d');
+  grad.addColorStop(.58, '#20301d');          // o horizonte, de raspão
+  grad.addColorStop(.72, '#0b110a');
+  grad.addColorStop(1, '#040604');
+  gF.fillStyle = grad; gF.fillRect(0, 0, 4, 256);
+  const texF = new THREE.CanvasTexture(cvF);
+  texF.colorSpace = THREE.SRGBColorSpace;
+  // fog desligado e sem escrever profundidade: a abóbada é fundo, não cenário
+  const domo = new THREE.Mesh(
+    new THREE.SphereGeometry(70, 24, 16),
+    new THREE.MeshBasicMaterial({ map: texF, side: THREE.BackSide, fog: false, depthWrite: false })
+  );
+  domo.renderOrder = -1;
+  cena.add(domo);
+}
+
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
 const base = new THREE.Vector3(0, 17, 13);
 
@@ -432,23 +458,41 @@ function desenharCobra(t) {
 // As escamas aqui NÃO são textura pintada: são peças de verdade, cada uma
 // pegando luz sozinha. É a diferença entre o desenho de uma pele e uma pele.
 // Uma InstancedMesh desenha todas numa chamada só.
-const ESCAMAS_VOLTA = 32;        // quantas dão a volta na frente do corpo
+// Cobre do pé da frente, por cima, até o pé de trás: 237 graus. Cobria só os
+// 140 da frente, que bastava no close — mas quando a câmera sobe durante a
+// saída ela passa a olhar o corpo de cima, e o alto pelado lia como uma laje
+// preta deitada no tabuleiro.
+const ESCAMAS_VOLTA = 54;        // quantas dão a volta no corpo
 const ESCAMAS_FIO = 52;          // quantas ao longo dele
 const R_CORPO = 5.5;
 const PASSO_FIO = .42;
-const X0_FIO = -12;              // começa atrás: ainda há pele quando ela desliza
+const X0_FIO = -12;
+const POSE_PELE = new THREE.Vector3(0, 2.2, 2);
+// Onde o close pousa: a casa da cobra no instante do Jogar, e não a cabeça
+// quadro a quadro. Perseguindo a cabeça a pele varria o tabuleiro atrás dela.
+const ALVO_PELE = new THREE.Vector3(0, .5, 0);
 
 const pele = new THREE.Group();
-pele.position.set(0, 2.2, 2);
+pele.position.copy(POSE_PELE);
 cena.add(pele);
 
-// a carne por baixo, para a fresta entre escamas não virar buraco no vazio
+// A carne por baixo, para a fresta entre escamas não virar buraco no vazio.
+// `transparent` já de saída, com opacidade cheia: ligar isso no meio da
+// transição recompila o sombreador e engasga justo no quadro que importa.
+const matCarne = new THREE.MeshStandardMaterial({
+  color: 0x12160e, roughness: .95, side: THREE.DoubleSide, transparent: true,
+});
+// Ela tem EXATAMENTE o comprimento da fileira de escamas. Tinha 80 contra os
+// 21,8 da fileira, e enquanto o close era gigante isso não aparecia — mas
+// encolhido virava um bastão preto saindo dos dois lados da pele.
+const FIO_COMP = ESCAMAS_FIO * PASSO_FIO;
+const FIO_MEIO = X0_FIO + (FIO_COMP - PASSO_FIO) / 2;
 {
   const carne = new THREE.Mesh(
-    new THREE.CylinderGeometry(R_CORPO * .96, R_CORPO * .96, 80, 40, 1, true),
-    new THREE.MeshStandardMaterial({ color: 0x12160e, roughness: .95, side: THREE.DoubleSide })
+    new THREE.CylinderGeometry(R_CORPO * .96, R_CORPO * .96, FIO_COMP, 40, 1, true), matCarne
   );
   carne.rotation.z = Math.PI / 2;
+  carne.position.x = FIO_MEIO;
   pele.add(carne);
 }
 
@@ -461,12 +505,14 @@ geoEscama.scale(.46, .24, .9);   // estreita, fina e comprida: escama, não seix
 // quase não aparece sem mapa de ambiente.
 const matEscama = new THREE.MeshPhysicalMaterial({
   roughness: .22, metalness: .3, clearcoat: 1, clearcoatRoughness: .14,
+  transparent: true,
 });
 const escamas = new THREE.InstancedMesh(geoEscama, matEscama, ESCAMAS_VOLTA * ESCAMAS_FIO);
 pele.add(escamas);
 
 // uma luz rasante só da entrada: anda com a pele e some junto com ela
-const luzPele = new THREE.PointLight(0xfff0d0, 34, 26);
+const LUZ_PELE = 34;
+const luzPele = new THREE.PointLight(0xfff0d0, LUZ_PELE, 26);
 luzPele.position.set(3, 7, 8);
 pele.add(luzPele);
 
@@ -479,10 +525,9 @@ pele.add(luzPele);
   for (let j = 0; j < ESCAMAS_FIO; j++) {
     const x = X0_FIO + j * PASSO_FIO;
     for (let i = 0; i < ESCAMAS_VOLTA; i++) {
-      // arco da frente, com as fileiras encaixadas meio a meio
-      // o arco é centrado na CÂMERA (+Z, ou seja π/2), não no alto do corpo:
-      // centrado no alto, a frente ficava pelada e só o topo tinha escama
-      const a = (Math.PI / 2 - 1.22) + ((i + (j % 2) * .5) / ESCAMAS_VOLTA) * 2.44;
+      // o arco é centrado na CÂMERA do menu (+Z, ou seja π/2), não no alto do
+      // corpo: centrado no alto, a frente ficava pelada e só o topo tinha escama
+      const a = (Math.PI / 2 - 2.07) + ((i + (j % 2) * .5) / ESCAMAS_VOLTA) * 4.14;
       cima.set(0, Math.cos(a), Math.sin(a));
       lado.crossVectors(cima, frente).normalize();
       giro.makeBasis(lado, cima, frente.clone());
@@ -519,9 +564,19 @@ function pintarEscamas(qual) {
   escamas.instanceColor.needsUpdate = true;
 }
 
+// Devolver a pele ao close é de um lugar só: ela sai encolhida, deslocada e
+// quase apagada, e sem isto voltar ao menu mostrava esse resto.
+function pelePronta() {
+  pele.scale.setScalar(1);
+  pele.position.copy(POSE_PELE);
+  pele.rotation.x = 0;
+  matEscama.opacity = matCarne.opacity = 1;
+  luzPele.intensity = LUZ_PELE;
+}
+
 const POSE_MENU = new THREE.Vector3(0, 2.6, 12.2);
 const OLHAR_MENU = new THREE.Vector3(0, 2.2, 2);
-const SAIDA_DURA = 1.5;                           // segundos da saída
+const SAIDA_DURA = 1.9;                           // segundos da saída
 let saida = 1;                                    // 0 = menu, 1 = em jogo
 const correndo = () => estado === 'jogando' || estado === 'saindo';
 const poucoMovimento = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1024,6 +1079,7 @@ function comecar(n) {
   saida = doMenu ? 0 : 1;
   estado = doMenu ? 'saindo' : 'jogando';
   pele.visible = doMenu;
+  if (doMenu) { pelePronta(); ALVO_PELE.set(mundo(cobra[0].x), .5, mundo(cobra[0].y)); }
   fecharPaineis();
 }
 
@@ -1042,6 +1098,7 @@ function sairParaMenu() {
   estado = 'pronto';
   saida = 0;
   pele.visible = true;
+  pelePronta();
   abrirPainel('menu', 'Cobrinha 3D', 'Escolha o nível');
 }
 
@@ -1175,6 +1232,7 @@ escolherNivel(nivel);
 ajustar();
 saida = 0;                                        // o jogo nasce no close da pele
 pele.visible = true;
+pelePronta();
 abrirPainel('menu', 'Cobrinha 3D', 'Escolha o nível');
 
 renderer.setAnimationLoop(() => {
@@ -1204,10 +1262,33 @@ renderer.setAnimationLoop(() => {
   cabeca.rotation.y = angulo;
 
   // A pele do close: parada ela respira — anda devagar e balança de leve,
-  // como bicho dormindo. Saindo, dispara para fora do quadro.
+  // como bicho dormindo.
+  //
+  // Saindo, ela NÃO escorrega para fora do quadro. Fazia isso antes, e o que
+  // se via era a ponta da fileira de escamas atravessando a tela e, atrás
+  // dela, nada: o corpo "acabava". Agora o close ENCOLHE até ser a cobra de
+  // verdade, no lugar dela e do tamanho dela, enquanto a câmera recua. O que
+  // enchia a tela se revela ser ela — e aí o menu e o jogo são a mesma coisa,
+  // não duas telas emendadas.
   if (pele.visible) {
-    pele.position.x = -((tempo * .45) % (PASSO_FIO * 2)) - Math.pow(saida, 2) * 11;
-    pele.rotation.x = Math.sin(tempo * .45) * .06;
+    const e = saida * saida * (3 - 2 * saida);
+    // o rastejo é de uma fileira de escamas: o olho vê o corpo correndo sem
+    // que o corpo vá a lugar nenhum. Acelera na saída, como quem arranca.
+    const rastejo = -((tempo * (.45 + saida * 6)) % (PASSO_FIO * 2));
+    // O encolhimento termina ANTES da câmera: aos 85% do caminho o close já
+    // está do tamanho da cobra e na casa dela, e o resto é só a apagada por
+    // cima. Chegando junto com a câmera, ele passava um bom tempo sendo um
+    // tapete verde no meio do tabuleiro, nem close nem cobra.
+    const eEsc = Math.min(1, e / .85);
+    const k = 1 - eEsc * (1 - RAIO / R_CORPO);
+    pele.scale.setScalar(k);
+    pele.position.lerpVectors(POSE_PELE, ALVO_PELE, eEsc);
+    pele.position.x += rastejo * k;
+    pele.rotation.x = Math.sin(tempo * .45) * .06 * (1 - e);
+    // e some em cruzamento com ela: as duas no mesmo lugar e do mesmo tamanho,
+    // uma apagando enquanto a outra fica. É daí que vem a emenda invisível.
+    matEscama.opacity = matCarne.opacity = 1 - Math.max(0, (saida - .62) / .38);
+    luzPele.intensity = LUZ_PELE * (1 - e);
   }
 
   bolha.visible = protegido() && estado !== 'fim';
@@ -1324,7 +1405,12 @@ renderer.setAnimationLoop(() => {
     saida = Math.min(1, saida + dt / SAIDA_DURA);
     const e = saida * saida * (3 - 2 * saida);     // sai devagar, acelera e assenta
     camera.position.lerpVectors(POSE_MENU, base, e);
-    alvoOlhar.lerpVectors(OLHAR_MENU, ALVO_JOGO, e);
+    // Um arco lateral discreto, que começa e termina em zero: subir na reta
+    // entre as duas poses lê como corte de câmera, o arco lê como câmera.
+    camera.position.x += Math.sin(e * Math.PI) * 2.4;
+    // E a inclinação atrasa um fio em relação ao corpo da câmera: primeiro ela
+    // levanta, depois baixa o olhar para o tabuleiro.
+    alvoOlhar.lerpVectors(OLHAR_MENU, ALVO_JOGO, Math.pow(saida, 1.45));
     if (saida >= 1) { estado = 'jogando'; pele.visible = false; $('pausa').hidden = false; }
   } else if (estado === 'pronto') {
     camera.position.copy(POSE_MENU);
