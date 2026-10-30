@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Cobrinha 3D</title>
+<title>Ouroboros</title>
 <style>
   /* Paleta mineral: verde quase preto, traço em osso, um só acento em ouro
      velho. Nada de neon — a cara é de vitrine, não de fliperama. */
@@ -72,7 +72,12 @@
          #fffdf4 0%, #efe6cb 22%, #d9bf63 42%, #c9a227 52%,
          #7d6213 60%, #e6d79c 74%, #fffdf4 100%);
        -webkit-background-clip: text; background-clip: text; color: transparent;
-       transform: perspective(760px) rotateX(17deg) scale(1.04);
+       transform: perspective(760px)
+                  rotateX(calc(17deg + var(--my, 0) * -8deg))
+                  rotateY(calc(var(--mx, 0) * 10deg))
+                  translateZ(calc(var(--carga) * -260px))
+                  scale(1.04);
+       transition: transform .55s cubic-bezier(.22, 1, .36, 1);
        filter:
          drop-shadow(0 1px 0 #6d5f33) drop-shadow(0 2px 0 #5b4f2a)
          drop-shadow(0 3px 0 #4a4022) drop-shadow(0 4px 0 #3a321a)
@@ -97,22 +102,52 @@
   .botao[hidden] { display: none; }
   .botao { -webkit-touch-callout: none; }
 
-  /* ---------- segurar para entrar ---------- */
-  /* A barra do Jogar e a entrada da cobra são o MESMO valor: `--carga`, escrito
-     pelo laço no painel. Por isso a barra nunca mente sobre onde ela está. */
-  .painel { --carga: 0; }
-  #jogar { position: relative; overflow: hidden; }
-  #jogar::before { content: ''; position: absolute; inset: 0 auto 0 0;
-                   width: calc(var(--carga) * 100%); background: rgba(201,162,39,.11); }
-  #jogar::after { content: ''; position: absolute; left: 0; bottom: 0; height: 2px;
-                  width: calc(var(--carga) * 100%); background: var(--ouro); }
   /* Carregando, o menu recua e só o botão segurado fica: o que sai de cena é o
      menu, não o jogo — ele já está acontecendo atrás. */
   .painel--carga { background: radial-gradient(closest-side,
                      rgba(10,15,12, calc(.9 - var(--carga) * .9)),
                      rgba(10,15,12, calc(.5 - var(--carga) * .5))); }
-  .painel--carga > h1, .painel--carga > p,
+  .painel--carga > .brasao, .painel--carga > p,
   .painel--carga #principal > .botao:not(#jogar) { opacity: max(0, calc(1 - var(--carga) * 1.7)); }
+
+  /* ---------- o nome responde ao ponteiro ---------- */
+  /* --mx/--my vêm do JS, de -1 a 1. O nome é uma peça de metal pendurada: o
+     ponteiro vira a peça, e com a carga ela recua no fundo junto com a câmera. */
+  .brasao { animation: balanco 9s ease-in-out infinite; transform-style: preserve-3d; }
+  @keyframes balanco {
+    0%, 100% { transform: translateY(0) rotate(-.25deg); }
+    50%      { transform: translateY(-5px) rotate(.25deg); }
+  }
+  @media (prefers-reduced-motion: reduce) { .brasao { animation: none; } }
+
+  /* ---------- segurar para entrar ---------- */
+  /* A barra do Jogar e a entrada da cobra são o MESMO valor: `--carga`, escrito
+     pelo laço no painel. Por isso a barra nunca mente sobre onde ela está. */
+  .painel { --carga: 0; }
+  #jogar { position: relative; overflow: hidden; isolation: isolate;
+           letter-spacing: calc(.18em + var(--carga) * .2em);
+           color: var(--osso);                      /* reserva: navegador sem color-mix */
+           color: color-mix(in srgb, var(--osso), var(--ouro) calc(var(--carga) * 100%));
+           box-shadow: 0 0 calc(var(--carga) * 30px) rgba(201,162,39, calc(var(--carga) * .45));
+           border-color: color-mix(in srgb, #262c23, var(--ouro) calc(var(--carga) * 100%)); }
+  /* o que enche o botão é A PELE QUE VOCÊ VESTE, a mesma que entra no
+     tabuleiro: o botão não é uma barra de carga, é ela chegando */
+  #jogar::before { content: ''; position: absolute; inset: 0; z-index: -1;
+                   width: calc(var(--carga) * 100%);
+                   background-image: var(--pele); background-size: auto 230%;
+                   background-position: left center; opacity: .55; }
+  /* e o fio de ouro corre do meio para as duas pontas, fechando sobre si */
+  #jogar::after { content: ''; position: absolute; left: 50%; bottom: 0; height: 2px;
+                  width: calc(var(--carga) * 100%); transform: translateX(-50%);
+                  background: linear-gradient(90deg, transparent,
+                              var(--ouro) 16%, #fff6cf 50%, var(--ouro) 84%, transparent); }
+  /* parado, o botão respira: é o convite para segurar */
+  .painel:not(.painel--carga) #jogar { animation: respira 3.6s ease-in-out infinite; }
+  @keyframes respira {
+    0%, 100% { box-shadow: 0 0 0 rgba(201,162,39,0); }
+    50%      { box-shadow: 0 0 16px rgba(201,162,39,.2); }
+  }
+  @media (prefers-reduced-motion: reduce) { .painel #jogar { animation: none; } }
   .botao--fraco { color: var(--osso-fraco); font-size: 13px; }
   .botao--ouro { color: var(--ouro); border-color: var(--ouro-fraco); }
 
@@ -161,7 +196,7 @@
 <div class="aviso" id="aviso" hidden></div>
 
 <div class="painel" id="painel">
-  <h1 id="titulo">Cobrinha</h1>
+  <div class="brasao"><h1 id="titulo">Ouroboros</h1></div>
   <p id="sub">Segure JOGAR para entrar</p>
 
   <div class="grupo" id="principal">

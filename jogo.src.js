@@ -376,6 +376,9 @@ function vestir(qual) {
   crânio.material.map = t;
   crânio.material.needsUpdate = true;
   pintarEscamas(qual);          // e a entrada ganha a mesma pele, em relevo
+  // O botão Jogar enche com a pele que você veste: segurar não é "carregar
+  // uma barra", é ela chegando. Troque de cobra no vestiário e o botão muda.
+  $('jogar').style.setProperty('--pele', `url(${miniaturaDaPele(qual)})`);
 }
 
 // A miniatura de cada cobra é a própria textura dela — não um quadradinho de
@@ -487,13 +490,27 @@ const matCarne = new THREE.MeshStandardMaterial({
 // encolhido virava um bastão preto saindo dos dois lados da pele.
 const FIO_COMP = ESCAMAS_FIO * PASSO_FIO;
 const FIO_MEIO = X0_FIO + (FIO_COMP - PASSO_FIO) / 2;
+const PONTA_FIO = X0_FIO + FIO_COMP - PASSO_FIO * 1.5;   // onde a cabeça se prende
+const pontaPele = new THREE.Vector3();
+// O rabo afunila. Sem isso o corpo terminava num tubo cortado, e quando a
+// câmera subia via-se o buraco dentro dele — um cano, não um bicho.
+const RABO_U = .26;                                      // fração do fio que é rabo
+const afunila = u => .12 + .88 * Math.min(1, u / RABO_U);
 {
-  const carne = new THREE.Mesh(
-    new THREE.CylinderGeometry(R_CORPO * .96, R_CORPO * .96, FIO_COMP, 40, 1, true), matCarne
-  );
-  carne.rotation.z = Math.PI / 2;
-  carne.position.x = FIO_MEIO;
-  pele.add(carne);
+  const R = R_CORPO * .96;
+  // o tronco, do fim do rabo até a cabeça
+  const tronco = new THREE.Mesh(
+    new THREE.CylinderGeometry(R, R, FIO_COMP * (1 - RABO_U), 40, 1, true), matCarne);
+  tronco.rotation.z = Math.PI / 2;
+  tronco.position.x = X0_FIO + FIO_COMP * (RABO_U + (1 - RABO_U) / 2);
+  pele.add(tronco);
+  // e o rabo, que fecha a ponta. Depois do giro em z, o topo do cone cai no
+  // lado -X, que é justamente onde o corpo termina.
+  const rabo = new THREE.Mesh(
+    new THREE.CylinderGeometry(R * afunila(0), R, FIO_COMP * RABO_U, 40, 1, false), matCarne);
+  rabo.rotation.z = Math.PI / 2;
+  rabo.position.x = X0_FIO + FIO_COMP * RABO_U / 2;
+  pele.add(rabo);
 }
 
 // A escama: cúpula achatada e comprida. Verniz e iridescência dão o brilho
@@ -520,6 +537,7 @@ pele.add(luzPele);
 // milhares de triângulos escondidos custam o mesmo que os visíveis.
 {
   const giro = new THREE.Matrix4(), tombo = new THREE.Matrix4(), m = new THREE.Matrix4();
+  const escalaEscama = new THREE.Vector3();
   const cima = new THREE.Vector3(), lado = new THREE.Vector3(), frente = new THREE.Vector3(-1, 0, 0);
   let k = 0;
   for (let j = 0; j < ESCAMAS_FIO; j++) {
@@ -533,7 +551,10 @@ pele.add(luzPele);
       giro.makeBasis(lado, cima, frente.clone());
       tombo.makeRotationAxis(lado, -.3);           // levanta a borda: uma monta na outra
       m.multiplyMatrices(tombo, giro);
-      m.setPosition(x, Math.cos(a) * R_CORPO, Math.sin(a) * R_CORPO);
+      // as escamas do rabo encolhem junto com ele, senão flutuariam fora da carne
+      const t = afunila(j / (ESCAMAS_FIO - 1));
+      m.scale(escalaEscama.setScalar(t));
+      m.setPosition(x, Math.cos(a) * R_CORPO * t, Math.sin(a) * R_CORPO * t);
       escamas.setMatrixAt(k++, m);
     }
   }
@@ -1101,6 +1122,7 @@ function comecar(n) {
 
 // barra cheia: a partida começa, e aí sim o painel sai
 function entrou() {
+  cabeca.scale.setScalar(1);
   saida = 1;
   estado = 'jogando';
   segurando = autoCarga = false;
@@ -1114,6 +1136,7 @@ function entrou() {
 
 // soltou cedo: desfaz a carga e devolve o menu inteiro
 function desistiu() {
+  cabeca.scale.setScalar(1);
   saida = 0;
   estado = 'pronto';
   segurando = autoCarga = false;
@@ -1161,7 +1184,7 @@ function sairParaMenu() {
   corpoCobra.visible = cabeca.visible = true;
   carregar(0);
   $('painel').classList.remove('painel--carga');
-  abrirPainel('menu', 'Cobrinha 3D', 'Segure JOGAR para entrar');
+  abrirPainel('menu', 'Ouroboros', 'Segure JOGAR para entrar');
 }
 
 function pintarVestiario() {
@@ -1238,6 +1261,18 @@ document.querySelectorAll('[data-nivel]').forEach(b =>
 // Segurar é o caminho normal. O clique seco continua valendo — teclado,
 // leitor de tela e quem só encosta e tira o dedo —, e aí a barra enche
 // sozinha, no mesmo tempo e com a mesma entrada.
+// O nome acompanha o ponteiro: a peça de metal virando na mão. Só no menu —
+// em jogo não há nome na tela, e aí isto não custa nada.
+const olhar2d = (x, y) => {
+  $('painel').style.setProperty('--mx', x.toFixed(3));
+  $('painel').style.setProperty('--my', y.toFixed(3));
+};
+addEventListener('pointermove', e => {
+  if (ocupado()) return;
+  olhar2d((e.clientX / innerWidth) * 2 - 1, (e.clientY / innerHeight) * 2 - 1);
+});
+addEventListener('pointerleave', () => olhar2d(0, 0));
+
 $('jogar').addEventListener('pointerdown', () => segurarJogar());
 addEventListener('pointerup', soltarJogar);
 addEventListener('pointercancel', soltarJogar);
@@ -1312,7 +1347,7 @@ ajustar();
 saida = 0;                                        // o jogo nasce no close da pele
 pele.visible = true;
 pelePronta();
-abrirPainel('menu', 'Cobrinha 3D', 'Segure JOGAR para entrar');
+abrirPainel('menu', 'Ouroboros', 'Segure JOGAR para entrar');
 
 renderer.setAnimationLoop(() => {
   const dt = Math.min(relogio.getDelta(), .05), tempo = relogio.elapsedTime;
@@ -1326,9 +1361,14 @@ renderer.setAnimationLoop(() => {
     else if (saida <= 0) { saida = 0; desistiu(); }
     else {
       carregar(saida);
-      // a cobra de verdade acende por baixo da pele que apaga: no mesmo lugar
-      // e do mesmo tamanho, uma vira a outra sem piscar
-      corpoCobra.visible = cabeca.visible = saida > .62;
+      // A cabeça está em cena o tempo todo: é a MESMA cabeça da cobra,
+      // aumentada na proporção do close e presa na ponta da fileira de
+      // escamas. Sem ela, o que entrava era um corpo sem dono.
+      cabeca.visible = true;
+      // O corpo de verdade só acende quando o close já chegou ao tamanho
+      // dele (aos 72% é onde o encolhimento termina): no mesmo lugar e do
+      // mesmo tamanho, um vira o outro sem piscar.
+      corpoCobra.visible = saida > .72;
     }
   }
 
@@ -1379,9 +1419,18 @@ renderer.setAnimationLoop(() => {
     pele.position.lerpVectors(POSE_PELE, ALVO_PELE, eEsc);
     pele.position.x += rastejo * k;
     pele.rotation.x = Math.sin(tempo * .45) * .06 * (1 - e);
+    // A cabeça anda na ponta do corpo, no tamanho do corpo. Quando o close
+    // chega ao tamanho da cobra (eEsc cheio), ela larga o close e volta a ser
+    // conduzida pelo jogo — e aí já está no lugar certo, sem salto.
+    if (eEsc < 1) {
+      pele.updateMatrixWorld();
+      cabeca.scale.setScalar(k * (R_CORPO / RAIO));
+      cabeca.position.copy(pele.localToWorld(pontaPele.set(PONTA_FIO, 0, 0)));
+      cabeca.rotation.y = Math.PI / 2;                // ela encara o lado para onde vai
+    } else cabeca.scale.setScalar(1);
     // e some em cruzamento com ela: as duas no mesmo lugar e do mesmo tamanho,
     // uma apagando enquanto a outra fica. É daí que vem a emenda invisível.
-    matEscama.opacity = matCarne.opacity = 1 - Math.max(0, (saida - .62) / .38);
+    matEscama.opacity = matCarne.opacity = 1 - Math.max(0, (saida - .74) / .26);
     luzPele.intensity = LUZ_PELE * (1 - e);
   }
 

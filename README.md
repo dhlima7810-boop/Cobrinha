@@ -1,4 +1,4 @@
-# Cobrinha 3D
+# Ouroboros
 
 Jogo da cobrinha em 3D no navegador. Three.js, sem build e sem CDN.
 
@@ -9,9 +9,14 @@ Abra o `index.html` com duplo clique. Não precisa de servidor.
 A tela de entrada é a **pele da cobra que você está vestindo**, em close — e as
 escamas são peças de verdade, em relevo, cada uma pegando a luz sozinha (não é
 textura pintada). O padrão da cobra vestida reaparece ali, escama por escama.
-Apertar **Jogar** não troca de tela: ela rasteja para fora, a câmera recua
-junto e o tabuleiro aparece com a partida já correndo. Dificuldade, Vestiário
-e Configurações não disparam isso — só o Jogar.
+
+**Segure o JOGAR para entrar.** A barra do botão e a entrada da cobra são o
+mesmo valor: enquanto ela enche, o close encolhe até ser a cobra de verdade,
+com a cabeça na frente, e a câmera recua até o tabuleiro. A partida começa com
+a barra cheia e ela já inteira lá dentro. Soltar no meio desfaz tudo e devolve
+o close. O botão enche com a textura da cobra que você veste — trocou no
+vestiário, o botão muda. Dificuldade, Vestiário e Configurações não disparam
+nada.
 
 - **Jogar** começa a partida; **Dificuldade** escolhe o nível; **Configurações**
   liga ou desliga o som e a pausa ao sair da aba.
