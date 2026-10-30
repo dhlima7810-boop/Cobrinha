@@ -576,9 +576,14 @@ function pelePronta() {
 
 const POSE_MENU = new THREE.Vector3(0, 2.6, 12.2);
 const OLHAR_MENU = new THREE.Vector3(0, 2.2, 2);
-const SAIDA_DURA = 1.9;                           // segundos da saída
+const CARGA_DURA = 1.7;                           // segurando, do zero ao cheio
+const VOLTA_DURA = .55;                           // soltou no meio: desfaz mais rápido
 let saida = 1;                                    // 0 = menu, 1 = em jogo
-const correndo = () => estado === 'jogando' || estado === 'saindo';
+// Enquanto o botão carrega, o jogo NÃO corre. Era o contrário antes, e por
+// isso havia duas cobras na tela: a do close e a de verdade, já andando. Com
+// uma só, a troca no fim não tem emenda.
+const correndo = () => estado === 'jogando';
+const ocupado = () => estado === 'jogando' || estado === 'saindo' || estado === 'pausado';
 const poucoMovimento = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // bolha do escudo, em volta da cabeça
@@ -1069,18 +1074,71 @@ function escolherNivel(n) {
   hud();
 }
 
+// Entrar no jogo é SEGURAR o Jogar: a barra do botão enche, e no mesmo gesto
+// a cobra entra no tabuleiro. A partida começa com a barra cheia e ela já
+// inteira lá dentro — não há um instante em que uma coisa acabou e a outra
+// ainda não começou. Soltar no meio desfaz tudo, de volta ao close.
+let segurando = false, autoCarga = false, cancelou = false;
+
 function comecar(n) {
   if (n) escolherNivel(n);
-  if (correndo()) return;
-  // Só vindo do menu a cobra rasteja para fora: no "jogar de novo" a câmera
-  // já está no tabuleiro, e voltar para o close para então sair seria um salto.
+  if (ocupado()) return;
+  // Só vindo do menu existe a carga: no "jogar de novo" a câmera já está no
+  // tabuleiro, e voltar ao close para então entrar de novo seria um salto.
   const doMenu = estado === 'pronto' && !poucoMovimento();
   reiniciar();
-  saida = doMenu ? 0 : 1;
-  estado = doMenu ? 'saindo' : 'jogando';
-  pele.visible = doMenu;
-  if (doMenu) { pelePronta(); ALVO_PELE.set(mundo(cobra[0].x), .5, mundo(cobra[0].y)); }
+  if (!doMenu) { entrou(); return; }
+  saida = 0;
+  estado = 'saindo';
+  pele.visible = true;
+  pelePronta();
+  ALVO_PELE.set(mundo(cobra[1].x), .5, mundo(cobra[1].y));
+  // a cobra de verdade só aparece no fim, no lugar exato onde a pele some
+  corpoCobra.visible = cabeca.visible = false;
+  $('painel').classList.add('painel--carga');
+  carregar(0);
+}
+
+// barra cheia: a partida começa, e aí sim o painel sai
+function entrou() {
+  saida = 1;
+  estado = 'jogando';
+  segurando = autoCarga = false;
+  pele.visible = false;
+  corpoCobra.visible = cabeca.visible = true;
+  carregar(0);
+  $('painel').classList.remove('painel--carga');
   fecharPaineis();
+  $('pausa').hidden = false;
+}
+
+// soltou cedo: desfaz a carga e devolve o menu inteiro
+function desistiu() {
+  saida = 0;
+  estado = 'pronto';
+  segurando = autoCarga = false;
+  pele.visible = true;
+  pelePronta();
+  corpoCobra.visible = cabeca.visible = true;
+  carregar(0);
+  $('painel').classList.remove('painel--carga');
+}
+
+const carregar = v => $('painel').style.setProperty('--carga', v.toFixed(3));
+
+function segurarJogar() {
+  if (!naoSub()) return;
+  // 'pronto' e 'fim' são os dois estados em que o botão vale. Testado só
+  // contra 'pronto', o "Jogar de novo" do fim de jogo ficava morto.
+  if (!ocupado()) comecar();
+  if (estado === 'saindo') { segurando = true; autoCarga = false; }
+}
+function soltarJogar() {
+  if (!segurando) return;
+  segurando = false;
+  // o clique vem logo atrás de todo pointerup: sem esta marca ele reacenderia
+  // a carga que o dedo acabou de desistir
+  cancelou = estado === 'saindo' && saida > .02;
 }
 
 function pausar() {
@@ -1097,9 +1155,13 @@ function pausar() {
 function sairParaMenu() {
   estado = 'pronto';
   saida = 0;
+  segurando = autoCarga = false;
   pele.visible = true;
   pelePronta();
-  abrirPainel('menu', 'Cobrinha 3D', 'Escolha o nível');
+  corpoCobra.visible = cabeca.visible = true;
+  carregar(0);
+  $('painel').classList.remove('painel--carga');
+  abrirPainel('menu', 'Cobrinha 3D', 'Segure JOGAR para entrar');
 }
 
 function pintarVestiario() {
@@ -1154,11 +1216,12 @@ addEventListener('keydown', e => {
     else if (e.code === 'Escape') voltarSub();
     return;
   }
-  if (porNumero[e.code] && !correndo() && estado !== 'pausado') comecar(porNumero[e.code]);
+  if (porNumero[e.code] && !ocupado()) { comecar(porNumero[e.code]); autoCarga = true; }
   else if (e.code === 'KeyP' || e.code === 'Escape') pausar();
   else if (e.code === 'Space' || e.code === 'Enter') {
     e.preventDefault();
-    estado === 'pausado' ? pausar() : !correndo() && comecar();
+    if (estado === 'pausado') pausar();
+    else if (!ocupado()) { comecar(); autoCarga = true; }
   }
 });
 let toque;
@@ -1172,7 +1235,23 @@ addEventListener('touchend', e => {
 
 document.querySelectorAll('[data-nivel]').forEach(b =>
   b.addEventListener('click', () => { escolherNivel(b.dataset.nivel); voltarSub(); }));
-$('jogar').addEventListener('click', () => comecar());
+// Segurar é o caminho normal. O clique seco continua valendo — teclado,
+// leitor de tela e quem só encosta e tira o dedo —, e aí a barra enche
+// sozinha, no mesmo tempo e com a mesma entrada.
+$('jogar').addEventListener('pointerdown', () => segurarJogar());
+addEventListener('pointerup', soltarJogar);
+addEventListener('pointercancel', soltarJogar);
+$('jogar').addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); segurarJogar(); }
+});
+$('jogar').addEventListener('keyup', e => {
+  if (e.code === 'Space' || e.code === 'Enter') soltarJogar();
+});
+$('jogar').addEventListener('click', () => {
+  if (cancelou) { cancelou = false; return; }
+  if (!ocupado()) comecar();
+  if (estado === 'saindo') autoCarga = true;
+});
 $('abrirNiveis').addEventListener('click', () => abrirSub('pniveis'));
 $('voltarNiveis').addEventListener('click', voltarSub);
 $('pausa').addEventListener('click', pausar);
@@ -1233,10 +1312,25 @@ ajustar();
 saida = 0;                                        // o jogo nasce no close da pele
 pele.visible = true;
 pelePronta();
-abrirPainel('menu', 'Cobrinha 3D', 'Escolha o nível');
+abrirPainel('menu', 'Cobrinha 3D', 'Segure JOGAR para entrar');
 
 renderer.setAnimationLoop(() => {
   const dt = Math.min(relogio.getDelta(), .05), tempo = relogio.elapsedTime;
+
+  // A carga do botão é a mesma coisa que a entrada da cobra: um valor só,
+  // lido aqui no alto para que a barra, a pele e a câmera nunca discordem
+  // dentro do mesmo quadro.
+  if (estado === 'saindo') {
+    saida += (segurando || autoCarga ? dt / CARGA_DURA : -dt / VOLTA_DURA);
+    if (saida >= 1) { saida = 1; entrou(); }
+    else if (saida <= 0) { saida = 0; desistiu(); }
+    else {
+      carregar(saida);
+      // a cobra de verdade acende por baixo da pele que apaga: no mesmo lugar
+      // e do mesmo tamanho, uma vira a outra sem piscar
+      corpoCobra.visible = cabeca.visible = saida > .62;
+    }
+  }
 
   if (correndo()) {
     tempoJogo += dt;
@@ -1402,7 +1496,6 @@ renderer.setAnimationLoop(() => {
   // A câmera: no menu está colada na pele; apertar Jogar a faz recuar até o
   // tabuleiro. Uma coisa só, sem corte — por isso o menu não "fecha".
   if (estado === 'saindo') {
-    saida = Math.min(1, saida + dt / SAIDA_DURA);
     const e = saida * saida * (3 - 2 * saida);     // sai devagar, acelera e assenta
     camera.position.lerpVectors(POSE_MENU, base, e);
     // Um arco lateral discreto, que começa e termina em zero: subir na reta
@@ -1411,7 +1504,6 @@ renderer.setAnimationLoop(() => {
     // E a inclinação atrasa um fio em relação ao corpo da câmera: primeiro ela
     // levanta, depois baixa o olhar para o tabuleiro.
     alvoOlhar.lerpVectors(OLHAR_MENU, ALVO_JOGO, Math.pow(saida, 1.45));
-    if (saida >= 1) { estado = 'jogando'; pele.visible = false; $('pausa').hidden = false; }
   } else if (estado === 'pronto') {
     camera.position.copy(POSE_MENU);
     alvoOlhar.copy(OLHAR_MENU);
