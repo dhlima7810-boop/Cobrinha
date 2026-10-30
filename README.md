@@ -17,7 +17,9 @@ e Configurações não disparam isso — só o Jogar.
 - **Fácil** (meta 15), **Médio** (25) e **Difícil** (40). Bater a meta dá um token.
 - A **maçã vermelha** é só ponto. As coloridas dão poder: **azul** escudo,
   **roxa** lento, **dourada** pontos em dobro.
-- **Obstáculos** caem do céu ao longo da partida; a marca no chão avisa onde.
+- **Obstáculos** são pedras que caem do céu ao longo da partida; a marca no chão
+  avisa onde. Com o escudo, bater numa pedra a estilhaça; bater no muro faz a
+  cobra deslizar rente a ele em vez de morrer.
 - Ao morrer dá para **reviver** uma vez, com um token ou 10 pontos do banco.
 - **Vestiário** com 30 cobras. As 24 primeiras vêm dos **pontos somados na
   vida** (que nunca se gastam); as 6 últimas, de **desafios** — comer 5 maçãs

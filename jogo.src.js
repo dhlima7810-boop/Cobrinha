@@ -496,18 +496,37 @@ function pintarEspecial(chave) {
 // O bloco não cresce parado: ele sobe do chão girando, passa do ponto e
 // assenta, e depois respira. Cada um tem a sua fase, senão os 16 pulsam
 // juntos e o tabuleiro inteiro pisca.
-const geoBloco = new THREE.BoxGeometry(.92, .92, .92);
-const geoAresta = new THREE.EdgesGeometry(geoBloco);
-const matBlocoBase = new THREE.MeshStandardMaterial({ color: 0x334e68, emissive: 0x0e7490, emissiveIntensity: .35, roughness: .6 });
-const matArestaBase = new THREE.LineBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: .85 });
+// O obstáculo não é um cubo: é pedra bruta com veios de ouro, da mesma
+// família do friso e do chão. Quatro feitios diferentes, sorteados, para
+// dezesseis pedras no tabuleiro não virarem dezesseis cópias.
+function fazerPedra(semente) {
+  const g = new THREE.IcosahedronGeometry(.63, 1);
+  const pos = g.getAttribute('position'), v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    // o ruído vem da posição arredondada: vértices que se encontram andam
+    // juntos, senão a pedra se parte em triângulos soltos
+    const k = (Math.round(v.x * 60) * 73856093) ^ (Math.round(v.y * 60) * 19349663) ^ (Math.round(v.z * 60) * 83492791);
+    const r = ((Math.sin(k * 1e-4 + semente) * 43758.5453) % 1 + 1) % 1;
+    v.multiplyScalar(.8 + r * .46);
+    v.y *= .86;                                   // assentada no chão, não bola
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+const PEDRAS = [0, 1, 2, 3].map(i => fazerPedra(i * 2.7 + .4));
+const VEIOS = PEDRAS.map(g => new THREE.EdgesGeometry(g, 34));   // só as quinas marcadas levam veio
+const matPedraBase = new THREE.MeshStandardMaterial({ color: 0x555d4d, roughness: .9, metalness: .08, flatShading: true });
+const matVeioBase = new THREE.LineBasicMaterial({ color: 0xc9a227, transparent: true, opacity: .3 });
 const blocosMesh = [];
 const meshBloco = i => {
   while (blocosMesh.length <= i) {
     const grupo = new THREE.Group();
-    const caixa = new THREE.Mesh(geoBloco, matBlocoBase.clone());
-    caixa.castShadow = caixa.receiveShadow = true;
-    grupo.add(caixa);
-    grupo.add(new THREE.LineSegments(geoAresta, matArestaBase.clone()));
+    const pedra = new THREE.Mesh(PEDRAS[0], matPedraBase.clone());
+    pedra.castShadow = pedra.receiveShadow = true;
+    grupo.add(pedra);
+    grupo.add(new THREE.LineSegments(VEIOS[0], matVeioBase.clone()));
     cena.add(grupo);
     blocosMesh.push(grupo);
   }
@@ -517,7 +536,7 @@ const meshBloco = i => {
 // A marca no chão é o aviso: aparece antes do bloco e diz onde ele vai cair.
 // Sem ela a queda é injusta — ninguém desvia do que não viu.
 const geoMarca = new THREE.CircleGeometry(.46, 26);
-const matMarcaBase = new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: .2, depthWrite: false });
+const matMarcaBase = new THREE.MeshBasicMaterial({ color: 0xc9a227, transparent: true, opacity: .2, depthWrite: false });
 const marcasMesh = [];
 const marcaBloco = i => {
   while (marcasMesh.length <= i) {
@@ -544,7 +563,7 @@ function sacudir(forca) {
 // anel de choque no chão, para o bloco chegar com peso
 const ondas = [];
 const geoOnda = new THREE.RingGeometry(.34, .5, 28);
-function onda(x, z, cor = 0x67e8f9) {
+function onda(x, z, cor = 0xc9a227) {
   const m = new THREE.Mesh(geoOnda, new THREE.MeshBasicMaterial({ color: cor, transparent: true, opacity: .9, side: THREE.DoubleSide, depthWrite: false }));
   m.rotation.x = -Math.PI / 2;
   m.position.set(x, .03, z);
@@ -568,9 +587,9 @@ function poeira(x, z, forca) {
 
 // o bloco não some: ele estoura em cacos e deixa o anel
 function estilhacar(x, z) {
-  onda(x, z, 0x93c5fd);
+  onda(x, z, 0xe4e0d2);
   for (let i = 0; i < 14; i++) {
-    const m = new THREE.Mesh(geoFaisca, new THREE.MeshBasicMaterial({ color: i % 3 ? 0x60a5fa : 0x334e68 }));
+    const m = new THREE.Mesh(geoFaisca, new THREE.MeshBasicMaterial({ color: i % 3 ? 0x5a6150 : 0xc9a227 }));
     m.position.set(x, .5, z);
     m.scale.setScalar(1.6);
     m.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
@@ -700,7 +719,24 @@ function tique() {
     if (!protegido()) return morrer();
     if (invul <= 0) { poder = null; poderAte = 0; }        // o escudo se gasta aqui
     som(300, .25);
-    if (fora) h = { x: (h.x + N) % N, y: (h.y + N) % N };  // atravessa a parede
+    if (fora) {
+      // O escudo NÃO teleporta para o outro lado: com o corpo contínuo, uma
+      // ponta no muro de cá e outra no de lá esticava a cobra pelo tabuleiro
+      // inteiro. Em vez disso ela desliza rente ao muro, virando para o lado
+      // que tiver espaço — perdoa a batida sem partir o corpo em dois.
+      const livre = d => {
+        const c = { x: cobra[0].x + d.x, y: cobra[0].y + d.y };
+        return c.x >= 0 && c.y >= 0 && c.x < N && c.y < N
+          && !cobra.slice(0, -1).some(o => o.x === c.x && o.y === c.y)
+          && !blocos.some(o => !o.caindo && o.x === c.x && o.y === c.y);
+      };
+      const lados = [{ x: -dir.y, y: dir.x }, { x: dir.y, y: -dir.x }];
+      const saidaBoa = lados.find(livre);
+      if (!saidaBoa) return morrer();                      // encurralada: nem o escudo salva
+      dir = saidaBoa;
+      fila.length = 0;
+      h = { x: cobra[0].x + dir.x, y: cobra[0].y + dir.y };
+    }
     if (iBloco >= 0) {                                      // e despedaça o bloco
       estilhacar(mundo(h.x), mundo(h.y));
       blocos.splice(iBloco, 1);
@@ -789,6 +825,8 @@ function conferirBlocos() {
   if (!casa) return;
   blocos.push({
     ...casa, fase: Math.random() * Math.PI * 2,
+    tipo: Math.floor(Math.random() * PEDRAS.length),
+    giroY: Math.floor(Math.random() * 4) * Math.PI / 2,   // quarto de volta: varia sem entortar
     alt: 13 + Math.random() * 4, vel: 0, caindo: true, quiques: 0, esmaga: 0,
     rotX: 0, rotZ: 0, giroX: (Math.random() - .5) * 1.5, giroZ: (Math.random() - .5) * 1.5,
   });
@@ -1176,15 +1214,18 @@ renderer.setAnimationLoop(() => {
     const treme = Math.sin(abaloT * 46) * abalo * Math.exp(-abaloT * 7) * .35;
 
     m.visible = true;
+    if (m.children[0].geometry !== PEDRAS[b.tipo]) {
+      m.children[0].geometry = PEDRAS[b.tipo];
+      m.children[1].geometry = VEIOS[b.tipo];
+    }
     // No alto, a sombra projetada cai longe e lê como um buraco no chão, longe
     // da casa onde o bloco vai pousar. Quem avisa é a marca; a sombra só volta
     // quando ele encosta.
     m.children[0].castShadow = !b.caindo;
     m.scale.set(exz, ey, exz);
     m.position.set(x, Math.max(b.alt, .46 * ey) + (b.caindo ? 0 : treme), z);
-    m.rotation.set(b.rotX, 0, b.rotZ);                      // alinhado com a grade: nada de bloco torto
-    m.children[0].material.emissiveIntensity = (b.caindo ? .5 : .3) + Math.sin(tempo * 2 + b.fase) * .18;
-    m.children[1].material.opacity = .6 + Math.sin(tempo * 2 + b.fase) * .25;
+    m.rotation.set(b.rotX, b.giroY, b.rotZ);                // alinhado com a grade, só um quarto de volta
+    m.children[1].material.opacity = (b.caindo ? .8 : .42) + Math.sin(tempo * 2 + b.fase) * .16;
   }
   for (let i = blocos.length; i < blocosMesh.length; i++) blocosMesh[i].visible = false;
   for (let i = blocos.length; i < marcasMesh.length; i++) marcasMesh[i].visible = false;
